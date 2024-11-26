@@ -1,0 +1,2 @@
+# BARI
+Scripts for projects
