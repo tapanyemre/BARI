@@ -1,0 +1,548 @@
+---
+title: "Properties getting TLID from TIGER data"
+output: html_notebook
+### Parcels to Streets
+### This script is asigning street information (from tiger data) to parcels.
+---
+
+# In this script we are changing PAD data and tiger csv with the road from last year.
+
+```{r}
+#### read library ####
+library(plyr)
+library(sp)
+library(sf)
+library(raster)
+library(rgdal)
+library(rgeos)
+library(dplyr)
+library(dbplyr)
+library(stringr)
+library(tidyverse)
+library(lwgeom)
+library(tigris)
+options(tigris_class = "sf",tigris_use_cache = T)
+library(units)
+```
+
+# Read BARI data
+```{r}
+# raw parcel file from the city of Boston
+parcels18_shp <- st_read("..\\Data\\Raw parcel shapefiles from CoB\\output.shp")
+
+# PAD unit from Property assessment data for 2021 # this PAD script is run by Saina
+propbari18 <- read_csv("..\\Outputs\\PAD.Record.wUnit05142021.csv")
+# PAD unit 2019, if needed for any checks
+#propbari18 <- read_csv("C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2019\\Outputs\\PAD.Record.wUnit.07242019.csv")
+
+#propbari18  <- propbari18 %>%
+#  rename(GIS_ID = parcel_num)
+```
+
+```{r}
+# read street data #we are using the csv created for the GI2019 release
+#tiger17 <- read.csv("C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2019\\Data\\Streets_2019_Prefinal_190731.csv")
+
+#tiger17 <- read.csv("C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2019\\Outputs\\Streets\\roads_fin_clust_2019_11142019.csv")
+tiger17 <- read.csv("C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2020\\Outputs\\Streets\\roads_fin_clust_2020_08182020.csv")
+
+# read shp street data and connect geometry with csv
+tiger17_shp <- st_read("C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2018\\Data\\BostonRoads2018\\Roads2018.shp")
+tiger17$geometry <- tiger17_shp$geometry[match(tiger17$TLID, tiger17_shp$TLID)]
+```
+
+# Analysis - a lot of string manipulation
+```{r}
+# Cleaning up the properties for centroids
+propbari18$PID <- as.integer(propbari18$PID)
+prop18 <- propbari18[!duplicated(propbari18$GIS_ID),] # 98943 # 98907 in 2019 #99777 in 2020
+
+# Finding the centroid and merging it back unto the parcel shapefile
+P18shp_centroid <- st_centroid(parcels18_shp %>%
+                                 st_transform(26986)) #st_centroid assumes attributes are constant over geometries of x
+
+# Merging the property data with the parcels shapefile and 
+# converting them to spatial objects (needed to be re-projected)
+P18shp_centroid$PID_LONG <- as.numeric(as.character(P18shp_centroid$PID_LONG)) # message: NAs introduced by coercion
+P18sf <- left_join(P18shp_centroid, prop18, by=c("PID_LONG"="GIS_ID"))
+a <- left_join(prop18, P18shp_centroid, by=c("GIS_ID"="PID_LONG"))
+
+#### Street analysis ####
+
+## we remove every suf part because it does not exist in pad 2021 ##
+
+#P18sf$ST_NAME_SUF <- gsub("XT","EXD",P18sf$ST_NAME_SUF)
+#P18sf$ST_NAME_SUF2 <- P18sf$ST_NAME_SUF
+#P18sf$ST_NAME_SUF2[is.na(P18sf$ST_NAME_SUF2)] <- ""
+
+P18sf$FULLNAME <- str_c(P18sf$ST_NAME, P18sf$ST_NAME_SUF2, sep = " ")
+P18sf$FULLNAME <- str_trim(P18sf$FULLNAME) # trim whitespace
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "WM T MORRISSEY BL" = "WILLIAM T MORRISSEY BLVD" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "JAMES ONEILL ST" = "JAMES O'NEIL ST" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "DRYDOCK AV" = "DRY DOCK AV" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "GEN JOZEF PILSUDSKI WAY" = "PILSUDSKI WAY")
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "REV R M COSTELLO PL" = "REV ROBERT M COSTELLO PL")
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "MSGR REYNOLDS WAY" = "MONSIGNOR REYNOLDS WAY")
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "WOODDALE AV" = "WOODALE AV")
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "SURREYHILL LA" = "SURREY HILL LA" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "RINGGOLD ST" = "RINGOLD ST" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "O DONNELL TE" = "ODONNELL TE" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "GEN WM H DEVINE WY" = "DEVINE WY" )
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "HAZLETON ST" = "HAZELTON ST")
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "MORRISON ST" = "SELWYN ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "MALCOLM X BL" = "NEW DUDLEY ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "LANE PK" = "LN PARK") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ALWIN ST" = "ALWYN ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "SILVIA CT" = "SYLVIA CT") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "JESHURUN RD" = "JESHURUN ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "GARDEN COURT ST" = "GARDEN CT") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "WAYMOUNT ST" = "PARKER HILL AV") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "POND VIEW AV" = "PONDVIEW AV") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ABBY RD" = "ABBEY RD") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ALTACREST RD" = "ALTA CREST RD") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "TERAGRAM ST" = "TEREGRAM ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "JOANNE TE" = "JO ANNE TE") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "DELANY CI" = "DELANEY CT") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "BONELL TE" = "BONNEL TE") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "AVENUE LOUIS PASTEUR" = "AVE LOUIS PASTEUR") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ST A" = "A ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ANTHONY R VALENTI WY" = "TRAVERSE ST") # per BostonMap TLID matching
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ADRIAN ST" = "ADRAIN ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "UFFORD ST" = "DYER ST") # per BostonMap, this is closest
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ST PAULS AV" = "ST PAUL'S AV") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "ORGAN PARK ST" = "ORGAN PARK") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "O DONNELL SQ" = "ODONNELL SQ") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "WM CARD OCONNELL WY" = "WILLIAM CARDINAL O'CONNELL WAY") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "MARYANNA RD" = "MARY ANNA RD") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "LEFEVRE ST" = "LE FEVRE ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "CENTER PZ" = "CAMBRIDGE ST") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "YEOMAN PL" = "YEOMAN ST") # per google
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "THEODORE A GLYNN WY" = "THEODORE GLYNN WY") # per bostonmap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "RIVERBANK PL" = "RIVERBANK PL PVT WAY") # per bostonmap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "REV RICHARD A BURKE" = "REV RICHARD A BURKE ST") # per bostonmap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "JEANNE DR" = "BEECHWOOD ST") # per bostonmap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "GEN JOZEF PILSUDSKI WY" = "PILSUDSKI WY") # per bostonmap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "FIDELIS WA" = "FIDELIS WAY") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "DR MARY M BEATTY CI" = "MARY MOORE BEATTY CIR") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "CORNAUBA EXD" = "CORNAUBA ST EXD") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "AVENUE DE LAFAYETTE" = "AVE DE LAFAYETTE") # per BostonMap
+P18sf$FULLNAME <- recode(P18sf$FULLNAME, "WILLIAM E DOUCETTE SQ" = "WM E DOUCETTE SQ") # per BostonMap
+P18sf$FULLNAME <- gsub(" AV$"," AVE",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" AV "," AVE ",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" HW$"," HWY",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" WY$"," WAY",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" BL$"," BLVD",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" CI$"," CIR",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" CR$"," CRES",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" TE$"," TER",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" PZ$"," PLZ",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" PA$"," PATH",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" WH$"," WHARF",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" LA$"," LN",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(" RO$"," ROW",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("FIRST","1ST",P18sf$FULLNAME) # making changes to parcel address names to match census:
+P18sf$FULLNAME <- gsub("SECOND","2ND",P18sf$FULLNAME) 
+P18sf$FULLNAME <- gsub("THIRD","3RD",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("FOURTH","4TH",P18sf$FULLNAME) 
+P18sf$FULLNAME <- gsub("FIFTH","5TH",P18sf$FULLNAME) 
+P18sf$FULLNAME <- gsub("SIXTH","6TH",P18sf$FULLNAME) 
+P18sf$FULLNAME <- gsub("SEVENTH","7TH",P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("EIGHTH","8TH",P18sf$FULLNAME) 
+P18sf$FULLNAME <- gsub("NINTH","9TH",P18sf$FULLNAME)
+# P18sf$FULLNAME <- gsub("TENTH","10TH",P18sf$FULLNAME)
+
+P18sf$FULLNAME <- str_trim(P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub(' +',' ', P18sf$FULLNAME)
+
+# Saina's portion
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "PW$", "PKWY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "PK$", "PARK")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CC$", "CIRCUIT")
+# P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CT$", "CIRCUIT")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "WM C KELLY SQ", "CENTRAL SQ")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "DELOS ST", "Grove Terrace")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "SEA VIEW AVE", "SEAVIEW AVE")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "MSGR P J LYDON WAY", "MSGR PATRICK J LYDON WAY")
+P18sf$FULLNAME <- gsub("^MT ","MOUNT ",P18sf$FULLNAME)
+
+# P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "MOUNT", "MT")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "DRAYTON ST", "DRAYTON AVE")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "ARBORWAY ST", "ARBORWAY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CASTLE ROCK ST", "CASTLEROCK ST")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "NAVARRE PL", "NAVARRE ST")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "WM F MCCLELLAN HWY", "WILLIAM F MCCLELLAN HWY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "ELM LAWN", "ELM LAWN ST")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "GROTTO GLEN AVE", "GROTTO GLEN RD")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "ROSEBERY", "ROSEBERRY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "JAMAICAWAY ST", "JAMAICAWAY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "MARTIN LUTHER KING JR BLVD", "MARTIN LUTHER KING BLVD")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "ROCK AVE", "ROCK AVE PRIVATE WAY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CHARLESGATE EAST", "CHARLESGATE E")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "KEYES STREET PL", "KEYES PL")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "PIERSON ST", "PEIRSON ST")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "FENWAY ST", "FENWAY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "TRUMAN PW", "TRUMAN HWY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "TALBOT PL", "TALBOT AVE")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "ORCHARD AVE", "ORCHARDHILL RD")
+## round two
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "NEWBURY ST", "NEWBURY")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "NEWBURY  ST", "NEWBURY")
+tiger17$FULLNAME <- str_replace(tiger17$FULLNAME, "NEWBURY ST", "NEWBURY")
+P18sf[98779,]$FULLNAME
+
+# Emma's portion
+# P18sf$FULLNAME  <- gsub("CHARLES STREET SOUTH","CHARLES ST S", P18sf$FULLNAME)
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CHARLES STREET SOUTH", "CHARLES ST S")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "OAK STREET WEST","OAK ST W")
+tiger17[13579,]$FULLNAME
+P18sf[40364,]$FULLNAME
+
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "SIXTEENTH ST","16TH ST")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "TE$"," TER")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "FR FRANCIS GILDAY ST","FATHER FRANCIS GILDAY ST")
+# P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CEMETERY LN","CEMETERY LA")
+# P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "CHISHOLM LN","CHISHOLM LA")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, " WEST"," W")
+P18sf$FULLNAME <- str_replace(P18sf$FULLNAME, "MSGR ","MONSIGNOR ")
+
+# P18sf$FULLNAME  <- gsub(" PK"," PARK", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" WY"," WAY", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" CI"," CIR", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" AV"," AVE", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" TE"," TER", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub("FR ","FATHER ", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" LA"," LN", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" WH"," WHARF", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub(" WEST"," W", P18sf$FULLNAME)
+# P18sf$FULLNAME  <- gsub("MSGR ","MONSIGNOR ", P18sf$FULLNAME)
+
+# Railey's portion
+# P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "PK$", "PARK")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "CHICKAMAUGA", "CHICAMAUGA")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "LAGRANGE", "LA GRANGE")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "MORTON VILLAGE", "MORTON VILLIAGE")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "CEDAR GROVE", "CEDAR GROVE ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "N BENNET CT", "N BENNETT CT")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "VAN BRUNT", "VAN BRUNT ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "WALES PL", "WALES ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "UPHAM CT", "UPHAMS CT")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "PARK VALE", "PARKVALE")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "THIRTEENTH", "13th")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "POWER HOUSE", "POWER HOUSE ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "SOLDIERS FIELD RD EXD", "SOLDIERS FIELD RD")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "STREET A", "A ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "O CONNELL", "OCONNELL")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "PORT NORFOLK", "PORT NORFOLK ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "TAFTHILL", "TAFT HILL")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "E BOUNDARY RD", "ENNEKING PKWY")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "PIE AL", "PIE ALY")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "MATIGNON", "MATIGON")
+# Courts/very small streets that are being grouped with the larger streets they are connected to 
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "RUGGLES CT", "RUGGLES ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "JUNIPER TER", "JUNIPER ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "MEYER CT", "MEYER ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "DUDLEY PL", "DUDLEY ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "NEAL CT", "SHORT ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "LOWLAND PL", "EVERETT ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "MONMOUTH SQ", "MONMOUTH ST")
+P18sf$FULLNAME<- str_replace(P18sf$FULLNAME, "FOSTER CT", "FOSTER ST")
+
+Zakhire <- P18sf
+P18sf <- Zakhire
+# Mehrnaz's portion
+
+# P18sf$FULLNAME <- gsub("BOARD AL", "BOARD ST", P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("DEDHAM LINE", "DEDHAM ST", P18sf$FULLNAME) ## done
+# P18sf$FULLNAME <- gsub("WARREN PK", "WARREN PARK", P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("HAYDN ST", "HAYDEN ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("NORTHDALE ST", "NORTHDALE RD", P18sf$FULLNAME) ## done
+
+P18sf$FULLNAME <- gsub("E BROADWAY ST", "E BROADWAY", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("BROADWAY ST", "BROADWAY", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("W BROADWAY ST", "W BROADWAY", P18sf$FULLNAME) ## done
+
+P18sf$FULLNAME <- gsub("RAILROAD RD", "RAILROAD ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("ADAMS$", "ADAMS ST", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("MOTHER JULIA RD", "MOTHER JULIAN RD", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("CHARLES RIVER DAM", "CHARLES RIVER DAM RD",P18sf$FULLNAME)  ## done & save
+P18sf$FULLNAME <- gsub("SNOW$", "SNOW ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("CHARLESGATE ST", "CHARLESGATE", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("BELMONT PL", "BELMONT ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("LOTHROP PL", "LOTHROP ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("LEAMINGTON ST", "LEAMINGTON RD", P18sf$FULLNAME)## done & save
+P18sf$FULLNAME <- gsub("NEW PICKERTS WHARF", "CENTRAL WHARF", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("BOWDOIN SQ", "BOWDOIN ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("COMMERCIAL WHARF EAST", "COMMERCIAL WHARF", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("GROVE PL", "GROVE ST", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("LEVERETT ST", "LEVERETT AVE", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("HOWE AVE", "HOWE ST", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("BRADEEN STREET FW", "BRADEEN ST", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("BAKERS AL", "BAKERS ALY", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("BATTERY WHARF ST", "BATTERY WHARF", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("PINEFIELD LN", "PINEFIELD RD", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("OAKLAND PARK", "OAKLAND PL", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("READVILLE TROTTING PARK", "READVILLE ST", P18sf$FULLNAME) ## done & save
+P18sf$FULLNAME <- gsub("^1ST ST", "E 1ST ST", P18sf$FULLNAME) ## done
+# P18sf$FULLNAME <- gsub("HESTIA PK", "HESTIA PARK", P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("^PARLEY VALE ST", "PARLEY VALE", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("^PARLEY VALE AVE", "PARLEY VALE", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("CUMMINGS HWY", "CUMMINGS ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("MASSPORT BYPASS RD", "MASSPORT HAUL RD", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("FID KENNEDY DR", "FID KENNEDY AVE", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("DRAPER RD", "DRAPER ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("GARDEN COURT CT", "GARDEN CT ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("ALPINE PL", "ALPINE ST", P18sf$FULLNAME)## done
+P18sf$FULLNAME <- gsub("HAMILTON TER", "HAMILTON PL", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("NEW DORCHESTER AVE BRIDGE", "DORCHESTER AVE", P18sf$FULLNAME) ## done & save
+P18sf$FULLNAME <- gsub("DEDHAM PARISH RD", "PARISH ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("ELLERY CT", "ELLERY ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("COLUMBUS SQ", "COLUMBUS AVE", P18sf$FULLNAME)  ## done
+
+# P18sf$FULLNAME <- gsub("COLUMBIA CIR", "COLUMBIA RD", P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("^7TH ST", "E 7TH ST", P18sf$FULLNAME) ## done
+# P18sf$FULLNAME <- gsub("RUNDEL PK", "RUNDEL PARK", P18sf$FULLNAME)
+P18sf$FULLNAME <- gsub("HICKORY AVE", "HICKORY LN", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("WOODLAND AVE", "WOODLAND RD", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("NEW NORTHERN AVE", "NORTHERN AVE", P18sf$FULLNAME)  ## done
+P18sf$FULLNAME <- gsub("HOYT PL", "HOYT ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("DEDHAM BRANCH", "DEDHAM ST", P18sf$FULLNAME) ## done
+P18sf$FULLNAME <- gsub("LAMARTINE CT", "LAMARTINE ST", P18sf$FULLNAME)## done & save
+
+# The offending TLID in 2019 is 85701050
+# View(prop18[prop18$TLID==85701050 & !is.na(prop18$TLID),])
+#unique(prop18$ST_NAME[prop18$TLID==85701050 & !is.na(prop18$TLID)]) #length == 401
+#View(tiger17[grepl('MC',tiger17$FULLNAME),])
+# added at end of subs: 
+P18sf$FULLNAME <- gsub("^MT ","MOUNT ",P18sf$FULLNAME)
+# added after import of tiger17 in order to create consistency of ST/SAINT, which is tricky. All properties, though, are ST:
+tiger17$FULLNAME <- gsub("^SAINT ","ST ",tiger17$FULLNAME)
+# Those two fixes get us down to 382.
+
+length(unique(P18sf$FULLNAME[!P18sf$FULLNAME %in% tiger17$FULLNAME])) #4061 #4087 in 2020 #4056 in 2021
+```
+
+```{r}
+# tiger17 spatial
+tiger17 <- st_as_sf(tiger17)
+tiger17 <- st_transform(tiger17, 26986)
+tiger17$FULLNAME <- toupper(as.character(tiger17$FULLNAME)) # this was needed
+
+#### Match parcels which have same FULLNAME as the street file####
+
+## running all parcels through matching:
+## Note: takes ~ 25 minutes to run this loop ~55min on 2020 data, tablet Alina
+start1 <- Sys.time()
+pb <- progress_estimated(nrow(P18sf),0)
+
+P18sf$TLID <- NA
+
+for(i in 1:nrow(P18sf)){
+  # i = 12
+  matching_streets <- tiger17 %>%
+    filter(FULLNAME %in% P18sf$FULLNAME[i])
+  if(nrow(matching_streets)>0){
+    P18sf$TLID[i] <- as.character(matching_streets$TLID[which.min(st_distance(P18sf[i,"geometry"], matching_streets))])
+    }
+  # pb$tick()$print() # update progress bar
+}
+
+end1 <- Sys.time()
+end1-start1 
+
+sum(is.na(P18sf$TLID))/nrow(P18sf) # 0.01544526 # 0.01690084 in 2020 #0.0173456 in 2021
+table(P18sf$FULLNAME[which(is.na(P18sf$TLID))]) %>% sort()
+```
+
+```{r}
+#### Add blocks groups, blocks ####
+
+length(unique(P18sf$FULLNAME[which(is.na(P18sf$TLID) & grepl("ISLAND",P18sf$FULLNAME)==F)])) # 159 #198 in 2019 data #221 in 2020 #203 in 2021
+#nrow(unique(P18sf[which(is.na(P18sf$TLID) & grepl("ISLAND",P18sf$FULLNAME)==F),])) # 404 # error in 2019 data #error in 2020
+
+blocks <- tigris::blocks(state = "MA",county = "Suffolk",year = 2016)
+blocks <- st_transform(blocks,26986)
+blocks$Blk_ID_10 <- blocks$GEOID10
+blocks$CT_ID_10 <- str_sub(blocks$GEOID10,end = 11)
+blocks <- blocks %>% dplyr::select(Blk_ID_10,CT_ID_10)
+
+bgs <- tigris::block_groups(state = "MA",county = "Suffolk",year = 2016)
+bgs <- st_transform(bgs,26986)
+bgs$BG_ID_10 <- bgs$GEOID
+bgs <- bgs %>% dplyr::select(BG_ID_10)
+
+
+P18sf_geo <- st_join(P18sf,blocks,join=st_within,left=T)
+P18sf_geo <- st_join(P18sf_geo,bgs,join=st_within,left=T)
+
+sum(is.na(P18sf_geo$Blk_ID_10))/nrow(P18sf_geo) #0.0002425958 in 2020
+sum(is.na(P18sf_geo$BG_ID_10))/nrow(P18sf_geo) #0.0002628121 in 2020
+sum(is.na(P18sf_geo$CT_ID_10))/nrow(P18sf_geo) #0.0002425958 in 2020
+
+P18sf_geo <- st_transform(P18sf_geo,4326)
+P18sf_geo$X <- st_coordinates(P18sf_geo)[,1]
+P18sf_geo$Y <- st_coordinates(P18sf_geo)[,2]
+
+# save parcels updated
+write_csv(as.data.frame(st_set_geometry(P18sf_geo,NULL)),"C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2021\\Outputs\\Prelim\\parcels_updatedTLID_08112021_A.csv")
+```
+
+```{r}
+#P18sf_geo <- read.csv("../Data/parcels_updatedTLID_190410.csv",stringsAsFactors = F)
+P18sf$TLID <- P18sf_geo$TLID[match(P18sf$PID_LONG,P18sf_geo$PID_LONG)]
+P18sf$Blk_ID_10 <- P18sf_geo$Blk_ID_10[match(P18sf$PID_LONG,P18sf_geo$PID_LONG)]
+P18sf$BG_ID_10 <- P18sf_geo$BG_ID_10[match(P18sf$PID_LONG,P18sf_geo$PID_LONG)]
+P18sf$CT_ID_10 <- P18sf_geo$CT_ID_10[match(P18sf$PID_LONG,P18sf_geo$PID_LONG)]
+P18sf_geo <- P18sf
+
+# save the workspace
+#save(P18sf_geo,file = "C:\\Users\\alina.ristea\\Google Drive\\Work\\NEU_BARI\\Projects\\Geographical_Infrastructure\\Data\\results\\parcels_updatedTLID_sf_09262019.RData")
+#load(file = "../Data/Geographical Infrastructure 2018/Data/parcels_updatedTLID_sf.RData")
+
+# read hte P18sf if it is not read previously (it is created in the upper rows)
+#P18sf <- read.csv("C:\\Users\\alina.ristea\\Google Drive\\Work\\NEU_BARI\\Projects\\Geographical_Infrastructure\\Boston Geographical Infrastructure 2019\\parcels_updatedTLID_10102019.csv")
+
+#NEW
+#P18sf <- read.csv("C:\\Users\\bariuser2\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2020\\Outputs\\parcels_updatedTLID_04292020.csv")
+
+p18 <- st_as_sf(P18sf, coords = c("X", "Y"), crs = 26986)
+sum(is.na(p18$TLID)) #1391 #1528 in 2019 data #1672 in 2020 #1716 in 2021
+
+
+#### DO NOT RUN: old loop from the code trying to connect streets and parcels ####
+
+# %>%
+#  head(n = 20)
+# TLID_NA <- st_join(TLID_NA, p18[,"ZIPCODE"],join=st_within,left=T)
+# TLID_NA <- p18[(is.na(p18$TLID)),]
+# # TLID_NA <- head(TLID_NA, 3)
+# # p18 <- st_as_sf(P18sf, coords = c("X", "Y"), crs = 26986)
+# TLID_NA <- st_transform(TLID_NA, 26986)
+# tiger17$zip <- ifelse(is.na(tiger17$ZIPL), as.character(tiger17$ZIPR), as.character(tiger17$ZIPL))
+# tiger17$zip <- as.numeric(tiger17$zip)
+
+#pb <- progress_estimated(nrow(TLID_NA),0)
+
+#TLID_NA$TLID <- NA
+#TLID_NA$dist <- NA
+
+## p18_sub <- p18[(is.na(p18$TLID)),]
+## 
+## nonmatching <- p18_sub %>%
+##   filter(!(FULLNAME %in% tiger17$FULLNAME))
+
+## nonmatching_streets <- tiger17 %>%
+## filter(zip %in% p18_sub$ZIPCODE)
+
+## TLID_NA <- head(TLID_NA, 3)
+
+# for (i in 1:nrow(TLID_NA)) {
+#   # nonmatching_streets <- tiger17 %>%
+#   #           filter(zip %in% TLID_NA$ZIPCODE[i])
+#   # if(nrow(nonmatching_streets)>0) {
+#   temp <-st_distance(TLID_NA[i,"geometry"], tiger17, by_element = TRUE)
+#   TLID_NA$TLID[i] <- as.character(tiger17$TLID[which.min(temp)])
+#   TLID_NA$dist[i] <- min(temp)
+#   # }
+#   # pb$tick()$print()
+# }
+
+
+#### TO RUN: find streets close to parcels by applying a buffer over the parcels ####
+
+# create a df for parcels which do not have TLID associated
+TLID_NA <- P18shp_centroid%>%
+  filter(PID_LONG %in% p18$PID_LONG[is.na(p18$TLID)]) # this will have 9 columns
+
+# try to use only the TLID column from tiger17 to work faster
+tiger17_short <- tiger17[,c("TLID")]
+
+# function creating buffers around each point and trying to find the shortest distence between what intersects each buffer
+points_to_near_poly <- function(points_transf, poly_transf){
+  # transform points and polygons
+  points <- st_as_sf(points_transf)
+  polygons <- st_as_sf(poly_transf)
+  # buffer around points
+  points_buffer <- st_buffer(points, dist = 100)
+  # create new variable for the joined info points and poly
+  mixed_var <- data.frame(matrix(ncol = dim(points)[2]+dim(polygons)[2]-1, nrow = dim(points)[1]))
+  for (i in 1:dim(points)[1]){
+    intersect_buffer_poly <- st_intersection(polygons, points_buffer[i,])
+    shortdist <- set_units(10000000000,cm)
+    if (dim(intersect_buffer_poly)[1] != 0){
+      for (j in 1:dim(intersect_buffer_poly)[1]){
+        dst <- st_distance(points[i,], intersect_buffer_poly[j,])#,byid=TRUE)
+        if (dst < shortdist){
+          shortdist <- dst
+          mixed_var[i,] <- intersect_buffer_poly[j,]
+        }
+      }
+    } else {
+      # change here according to the dataframe size
+      mixed_var[i,2:9] <- points[i,]
+    }
+  }
+  return(mixed_var)
+}
+
+# run the buffer analysis
+start1 <- Sys.time()
+TLID_NA <- points_to_near_poly(TLID_NA, tiger17_short) # Time difference of 4.991917 mins #10.53832 min on tablet 2020
+# 43 TLIDs NA for 100m
+end1 <- Sys.time()
+end1-start1
+
+sum(is.na(TLID_NA$X1))
+# 66 TLIDs NA for 100m #65 in 2020 for 100m #48 in 2021
+
+# the function is losing the headers; add names to header (TLID from tiger17 + names from P18sh)
+names = c(colnames(P18shp_centroid))
+colnames(TLID_NA) = c("TLID", names)
+
+# create copy variable TLID_new to be used further
+TLID_new <- TLID_NA
+
+# we use character for geometry column, if not we cannot save it well as csv
+TLID_NA$geometry <- as.character(TLID_NA$geometry)
+
+# save as csv 
+write.csv(TLID_NA, "C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2021\\Outputs\\Prelim\\TLIDs_08112021_A.csv", row.names = FALSE)
+
+#### Join data: parcels with TLID, parcels run in the buffer loop and resulted with or without TLIDs ####
+
+dt <- left_join(as.data.frame(p18), as.data.frame(TLID_new[,c("OBJECTID", "TLID")]), by = "OBJECTID")
+#@AR: the left join created two different columns tlid.x and tlid.y; we need to join them removing the NA
+dt$TLID[!is.na(dt$TLID.x)] = dt$TLID.x[!is.na(dt$TLID.x)]  
+dt$TLID[!is.na(dt$TLID.y)] = dt$TLID.y[!is.na(dt$TLID.y)]  
+# remove unnaccesary columns
+drops <- c("TLID.y", "TLID.x")
+dt <- dt[ , !(names(dt) %in% drops)]
+
+# save a csv including the TLID NAs and non NAs (i.e. parcels connected to streets or not)
+#names(dt)[95] <- "TLID"
+#names(dt)[94] <- "geometry"
+
+#in 2020
+#names(dt)[95] <- "TLID"
+#names(dt)[89] <- "geometry"
+
+dt <- st_as_sf(dt)
+#dt <- st_transform(dt,4326)
+dt$X <- st_coordinates(dt)[,1]
+dt$Y <- st_coordinates(dt)[,2]
+
+# save as csv
+write.csv(as.data.frame(st_set_geometry(dt,NULL)),"C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2021\\Outputs\\Prelim\\parcels_fullupdatedTLID_08112021_A.csv", row.names = FALSE)
+```
+
+```{r}
+## ERRORS WHILE TRYING TO WRITE AS SHP, finally it did not get saved as shp <-- we do not need shp for script 03 ##
+
+## Error in CPL_write_ogr(obj, dsn, layer, driver, as.character(dataset_options),  : 
+  #Write error
+  
+# save as shp
+st_write(dt, "C:\\Users\\User\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2021\\Outputs\\Prelim\\parcels_fullupdatedTLID_08112021_A.shp")
+```
+
+
+

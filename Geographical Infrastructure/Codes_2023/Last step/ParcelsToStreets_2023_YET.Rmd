@@ -1,0 +1,290 @@
+---
+title: "Parcels to Streets 2021"
+### This script is asigning information from parcels to street data.
+output: html_notebook
+---
+
+
+```{r}
+## read library ##
+library(plyr)
+library(sp)
+library(sf)
+library(raster)
+library(rgdal)
+library(rgeos)
+library(dplyr)
+library(dbplyr)
+library(stringr)
+library(tidyverse)
+library(lwgeom)
+library(units)
+```
+
+```{r}
+## read data ##
+
+# read parcels resulted from 03 scripts
+parcels <-read.csv("~/Desktop/BARI/GI-2023/drive/Parcel_final_10032023_YET.csv")
+
+# read street data (the data should be from Census2010 Tiger data (source MassGis), however there are a few differences)
+# the road data from GI2020 release
+streets_prefinal <- read.csv("~/Desktop/BARI/GI-2023/new datasets/Street Data/roads_fin_clust_2022_12132022.csv")
+
+# read the PAD_unit (original data) and check differences between PID_LONG in it and parcel data GIS_ID (in this case PID_LONG and GIS_ID should be the same)
+#PAD_unit <- read.csv("D:\\GoogleDrive\\BARI Research Team Data Library\\Property Assessment Data\\Data\\PAD18.Record.wUnit.09062019.csv")
+#length(setdiff(parcels$GIS_ID, PAD_unit$GIS_ID))
+# 10 GIS_ID are in the parcel file that are not in the PAD_unit for 2018
+```
+
+```{r}
+## counts of units, properties, and parcels ##
+length(unique(parcels$TLID)) #13836 (parcels from script 03) #13890 new #13885 in 2019 #13827 in 2020 #13833 in 2020 with changes #2021: 13817 #13866 in 2023 Sep
+length(unique(parcels$TLID[!is.na(parcels$unit_N_orig)])) #13250 (parcels from script 03) #13299 new #13295 in 2019 #13123 in 2020 #13134 in 2020 
+# 13210 in 2021 #13866 in 2023 Sep
+
+## create streets_units including unit_N and property_N from parcels
+streets_units<-aggregate(cbind(unit_N,property_N,!is.na(Land_Parcel_ID))~TLID,data=parcels,FUN=sum,na.rm=TRUE)
+summary(streets_units)
+
+## streets_units work
+## MZ: it's not clear to me what columns are intended to be dropped here
+# I changed it from -22:25 to -22:24 because dropping BG_ID_10 caused problems later and not dropping unit_N caused problems later (though this was confusing)
+## in future, these drops should always be by column name, not column index
+# YET (2023):When we look at the same column names by executing the code below, 22:25 are the correct ones to remove before the merging process.
+which(colnames(streets_prefinal) %in% colnames(streets_units))
+streets_prefinal <- streets_prefinal[,-c(22:25)]
+# streets_prefinal$X.1 <- NULL no X.1 in 2023
+streets_prefinal$X <- NULL
+names(streets_prefinal)
+
+names(streets_units)[4]<-'parcel_N'
+streets_units2 <-aggregate(unit_N_orig~TLID,data=parcels,FUN=sum,na.rm=TRUE)
+streets_units <- merge(streets_units,streets_units2,by='TLID',all.x=TRUE)
+#streets_units<-streets_units[c('TLID','unit_N','unit_N_orig','property_N','pa#rcel_N')]
+# MZ: if unit_N is not dropped, we end up with duplicated columns at merge below
+streets_units<-streets_units[c('TLID','unit_N_orig','property_N','parcel_N')]
+## join the streets_prefinal and streets_units
+streets_prefinal <- merge(streets_prefinal,streets_units,by='TLID',all.x=TRUE)
+
+summary(streets_prefinal) # 11056 streets is.na(streets_prefinal$unit_N) because 11056 street segments do not have parcels #11002 new #11007 in 2019 #11065 in 2020 #11059 in 2020 #11075 in 2021 #11026 in Sep 2023
+
+# ####replace clusters#### 
+# # ##street_lu comes from Building Street Clusters by Land Use.R##
+# streets_final<-merge(streets_final,street_lu[c('TLID','Cluster')],by='TLID',all.x=TRUE)
+# names(streets_final)[ncol(streets_final)]<-'Cluster'
+# streets_final<-streets_final[-20]
+# streets_final$Cluster<-ifelse(is.na(streets_final$Cluster),0,streets_final$Cluster)
+
+####specify census tracts and block groups####
+# create mode function
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+# add CT and BG information to streets_census
+streets_tracts<-aggregate(CT_ID_10~TLID, data=parcels, FUN=Mode)
+streets_bgs<-aggregate(BG_ID_10~TLID, data=parcels, FUN=Mode)
+streets_census<-merge(streets_tracts,streets_bgs,by='TLID',all.x=TRUE) #13832 streets_census #13886 new #13881 in 2019 #13823 in 2020 #13828 in fixed one # 13813 in 2021 #13863 in Sep 2023
+
+# only some data summary
+#mean(substr(parcels$BG_ID_10,1,11)==parcels$CT_ID_10,na.rm=TRUE)
+#mean(substr(parcels$Blk_ID_10,1,12)==parcels$BG_ID_10,na.rm=TRUE) 
+#mean(substr(streets_census$BG_ID_10,1,11)==streets_census$CT_ID_10,na.rm=TRUE)
+#View(streets_census[substr(streets_census$BG_ID_10,1,11)!=streets_census$CT_ID_10,])
+#View(parcels[parcels$TLID %in% streets_census$TLID[substr(streets_census$BG_ID_10,1,11)!=streets_census$CT_ID_10],])
+rm(streets_tracts,streets_bgs)
+
+
+sum(is.na(streets_census$BG_ID_10)) #0 in Sep 2023
+# there is one NA in BG in 2018 / no NA in 2019 data # 1 in 2021
+View(streets_census[which(is.na(streets_census$BG_ID_10)),]) #no NA in Sep 2023
+# the NA in BG is for TLID 636757439 and CT ID 25025040600 from streets census 
+
+# YET (2023) : I skipped the fixing part below, as there is no NA in BG_ID_10.
+# fixing the NA in BG
+# read properties csv (this is output of script 03)
+#prop <- read.csv("properties_geo_2022_12132022.csv")
+
+# check in the property file the TLID and CT_ID of the missing value from streets_census
+#View(prop[which(prop$CT_ID_10 == 25025040600 & prop$TLID == 636757439),]) #two properties have these values
+# one property has the GIS_ID 201831000 and the other 201831001, all the rest is the same
+
+# copy the BG_ID_10 from properties to streets_census
+#streets_census[is.na(streets_census$BG_ID_10),]$BG_ID_10 <- prop[which(prop$CT_ID_10 == 25025040600 & prop$TLID == 636757439 & prop$Land_Parcel_ID == 201831000),]$BG_ID_10
+#remove(prop)
+# now we do not have NA's in BG 
+sum(is.na(streets_census$BG_ID_10))
+
+# in the streets census, the TLID 85731073 is associated with BG 250259901010, CT 25025990101 while
+# in the streets prefinal, the TLID 85731073 is associated with BG_ID 250259812011 and CT_ID 25025981201
+
+length(setdiff(streets_census$BG_ID_10, streets_prefinal$BG_ID_10)) #1 in 2023
+setdiff(streets_census$BG_ID_10, streets_prefinal$BG_ID_10) #250259901010 in 2023
+setdiff(streets_census$CT_ID_10, streets_prefinal$CT_ID_10) #25025990101 in 2023
+
+########## @Alina&Saina: streets_w_centroid does now exist. we did not run the following lines ##########
+
+# streets_census<-merge(streets_census, streets_w_centroid[c('TLID','CT_ID_10','BG_ID_10')], by='TLID', all.y=TRUE)
+# sum(!is.na(streets_census$BG_ID_10.x))
+# sum(streets_census$CT_ID_10.x!=streets_census$CT_ID_10.y, na.rm=TRUE) ##1,101 of parcel-inferred tracts different from centroid
+# mean(streets_census$CT_ID_10.x!=streets_census$CT_ID_10.y, na.rm=TRUE) ##9.6% of parcel-inferred tracts different from centroid
+# sum(streets_census$CT_ID_10.x!=streets_census$CT_ID_10.y, na.rm=TRUE)/24891 ##4.4% of all streets
+# sum(streets_census$BG_ID_10.x!=streets_census$BG_ID_10.y, na.rm=TRUE) ##1,994 of parcel-inferred census block groups different from centroid
+# mean(streets_census$BG_ID_10.x!=streets_census$BG_ID_10.y, na.rm=TRUE) ##17.4% of parcel-inferred census block groups different from centroid
+# sum(streets_census$BG_ID_10.x!=streets_census$BG_ID_10.y, na.rm=TRUE)/24891 ##8.0% of all streets
+
+##fill in NAs based on lack of parcels with centroid locations
+#streets_census$BG_ID_10<-ifelse(!is.na(streets_census$BG_ID_10.x),streets_census$BG_ID_10.x,streets_census$BG_ID_10.y)
+#streets_census$CT_ID_10<-substr(streets_census$BG_ID_10,1,11)
+#sum(is.na(streets_census$CT_ID_10)) ##159 w centroid not in a block group, no parcel information attached to a block group
+#streets_census<-merge(streets_prefinal[c(2,26,27)],streets_census,by='TLID',all.x=TRUE)
+#streets_census<-merge(streets_prefinal[c(1,23,24)],streets_census,by='TLID',all.x=TRUE)
+# there is one NA in BG 
+
+# fill in NAs based on the streets spatial position inside the Census polygons 
+streets_census <- merge(streets_prefinal,streets_census,by='TLID',all.x=TRUE)
+summary(streets_census)
+
+
+streets_census$BG_ID_10<-ifelse(is.na(streets_census$BG_ID_10.y),streets_census$BG_ID_10.x,as.numeric(as.character(streets_census$BG_ID_10.y)))
+streets_census$CT_ID_10<-ifelse(is.na(streets_census$CT_ID_10.y),streets_census$CT_ID_10.x,as.numeric(as.character(streets_census$CT_ID_10.y)))
+
+summary(streets_census)
+# check the NAs
+sum(is.na(streets_census$BG_ID_10))
+sum(na.omit(streets_census$BG_ID_10) == 0)
+# 155 #we need to check with equal 0 because of the way we changed it for # ArcGis save
+sum(is.na(streets_census$CT_ID_10))
+sum(streets_census$CT_ID_10 == 0)
+# 155 #24 in 2020  # 24 in 2021 #24 in 2023
+
+#streets_final<-merge(streets_final[1:25],streets_census[c(1,6:7)],by='TLID',all.x=TRUE)
+#streets_prefinal<-merge(streets_prefinal,streets_census[c(1,29:30)],by='TLID',all.x=TRUE)
+streets_prefinal<-merge(streets_prefinal,streets_census[, c("TLID", "BG_ID_10", "CT_ID_10")],by='TLID',all.x=TRUE)
+#streets_prefinal <- cbind(streets_prefinal,streets_census[,c(30,31)])
+names(streets_prefinal)
+
+# check the NAs
+sum(is.na(streets_prefinal$BG_ID_10.x))
+# 159 #0
+sum(is.na(streets_prefinal$BG_ID_10.y))
+# 155 #0
+sum(is.na(streets_prefinal$CT_ID_10.x))
+# 159 #0
+sum(is.na(streets_prefinal$CT_ID_10.y))
+# 155 #0
+
+setdiff(streets_prefinal$BG_ID_10.y, streets_prefinal$BG_ID_10.x)
+#250259901010
+setdiff(streets_prefinal$CT_ID_10.y, streets_prefinal$CT_ID_10.x)
+#25025990101
+
+length(setdiff(streets_prefinal$BG_ID_10.y, streets_prefinal$BG_ID_10.x)) #1 #3 #1 in 2023
+#setdiff(streets_census$BG_ID_10, streets_prefinal$BG_ID_10)
+#setdiff(streets_census$CT_ID_10, streets_prefinal$CT_ID_10)
+
+# by joining with streets_census we get additional columns that are not neccesary
+colnames(streets_prefinal)[colnames(streets_prefinal)=="BG_ID_10.x"] <- "BG_ID_10"
+colnames(streets_prefinal)[colnames(streets_prefinal)=="CT_ID_10.x"] <- "CT_ID_10"
+#streets_prefinal <- streets_prefinal[,-c(27:28)]
+streets_prefinal = subset(streets_prefinal, select = -c(CT_ID_10.y))
+# now we have 159 (in 2019) and 24 (in 2020) streets without BG_ID_10 and CT_ID_10
+sum(is.na(streets_prefinal$BG_ID_10)) 
+sum(na.omit(streets_prefinal)$BG_ID_10 == 0) # 0 in 2023
+sum(streets_prefinal$BG_ID_10 == 0) #24 in 2023
+# 159 #24
+sum(is.na(streets_prefinal$CT_ID_10))
+sum(streets_prefinal$CT_ID_10 == 0)
+# 159 #24 
+
+```
+
+# In 2019 we had 159 NAs in CT and BG and we followed the following to add values
+# However, in 2020 only 24 are NAs, which were NAs in final 2019. --> so we do not run the distance function anymore
+```{r}
+# library(units)
+# # read streets as shapefile with geometry
+# roads <- st_read("C:\\Users\\bariuser2\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2018\\Data\\BostonRoads2018\\Roads2018.shp")
+# 
+# ### for the spatial join we need the parcels as shapefile ###
+# # in order to have CT and BG for 98930 we join shp to csv
+# parcel_final_2020_shp <- st_read("C:\\Users\\bariuser2\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2020\\Outputs\\BostonParcels2020_05082020\\Parcels2020_05082020.shp")
+# 
+# # join the info from the csv in the shp
+# parcel_final_2020_shp$Land_Parcel_ID <- parcel_final_2020_shp$Ln_P_ID
+# parcels <- left_join(parcel_final_2020_shp, parcels, by = "Land_Parcel_ID")
+# #coordinates(parcels) <- ~X + Y
+# #proj4string(parcels) = CRS("+init=epsg:4326")
+# parcels <- st_as_sf(parcels)
+# parcels <- st_transform(parcels, 26986)
+# 
+# # merge streets_prefinal with roads for having geometry
+# streets_prefinal <- left_join(roads[c("geometry", "TLID")], streets_prefinal, by="TLID", all.x = TRUE)
+# streets_prefinal <- st_as_sf(streets_prefinal)
+# streets_prefinal <- st_transform(streets_prefinal, 26986)
+# 
+# # subset the 159 streets without CT and BG (plot them to make sure are correct)
+# #roads_shp_noCT <- streets_prefinal[is.na(streets_prefinal$BG_ID_10),]
+# roads_shp_noCT <- streets_prefinal[streets_prefinal$BG_ID_10 == 0,] #24
+# roads_shp_noCT <- st_as_sf(roads_shp_noCT)
+# roads_shp_noCT <- st_transform(roads_shp_noCT, 26986)
+# plot(roads_shp_noCT[,1])
+# #st_write(roads_shp_noCT, "D:\\GoogleDrive\\Work\\NEU_BARI\\Projects\\Geographical_Infrastructure\\roads_noCT_159_2018.shp")
+# 
+# # calculte nearest neighbor (parcel) to each street in order to get the CT and BG from them; maxdist 50m
+# library(nngeo)
+# dist <- st_join(roads_shp_noCT, parcels, st_nn, k = 1, maxdist = 50)
+# 
+# # rename
+# dist$TLID <- dist$TLID.x
+# dist$BG_ID_10 <- dist$BG_ID_10.y
+# dist$CT_ID_10 <- dist$CT_ID_10.y
+# sum(is.na(dist$BG_ID_10)) #24 streets do not have CT and BG because they are over water connecting them
+# sum(is.na(dist$CT_ID_10)) #24 streets do not have CT and BG because they are over water connecting them
+# dist_short <- subset(dist[c("TLID", "BG_ID_10", "CT_ID_10")],)
+# dist_short <- as.data.frame(dist_short[,1:3])
+# dist_short$geometry <- NULL
+# 
+# # join the 159 street segments with the streets prefinal
+# streets_prefinal <- left_join(streets_prefinal, dist_short, by='TLID',all.x=TRUE)
+# streets_prefinal$BG_ID_10<-ifelse(is.na(streets_prefinal$BG_ID_10.y),streets_prefinal$BG_ID_10.x,streets_prefinal$BG_ID_10.y)
+# streets_prefinal$CT_ID_10<-ifelse(is.na(streets_prefinal$CT_ID_10.y),streets_prefinal$CT_ID_10.x,streets_prefinal$CT_ID_10.y)
+# 
+# # remove the not necessary created columns
+# streets_prefinal <- streets_prefinal %>% dplyr::select(-c("BG_ID_10.x", "BG_ID_10.y", "CT_ID_10.x", "CT_ID_10.y"))
+# sum(is.na(streets_prefinal$BG_ID_10)) #24 streets do not have CT and BG because they are over water connecting them
+# sum(is.na(streets_prefinal$CT_ID_10)) #24 streets do not have CT and BG because they are over water connecting them
+
+```
+
+# Save road files
+```{r}
+# read streets as shapefile with geometry
+roads <- st_read("~/Desktop/BARI/GI-2023/new datasets/Street Data/Roads_2021.shp")
+roads <- roads[c("geometry", "TLID")] 
+# # merge streets_prefinal with roads for having geometry
+streets_prefinal <- left_join(roads, streets_prefinal, by="TLID") #, all.x = TRUE)
+streets_prefinal <- st_as_sf(streets_prefinal)
+
+# export the new shapefile
+## run this code in console; otherwise will never finish
+st_write(streets_prefinal,"roads_fin_clust_YET_10162023.shp")
+
+# export also as csv
+write.csv(streets_prefinal,"roads_fin_clust_YET_10162023.csv", row.names = F)
+
+```
+
+```{r}
+##############################################################
+
+### In order to add the fixed clusters for 2018 (where the initial value was 0) please check script Street_Kmeans_fix_LU2018_11042019 ###
+### That script is using as input the roads_fin_2018_11132019.shp which is output of this script ###
+
+##############################################################
+```
+
+
+
+

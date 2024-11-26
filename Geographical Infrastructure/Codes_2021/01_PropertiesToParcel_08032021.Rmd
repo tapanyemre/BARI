@@ -1,0 +1,289 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# 2018
+### preliminary business:
+
+# GDrivepath <- "~/Google Drive/BARI Research Team Data Library/"
+# setwd(paste0(GDrivepath,"Geographical Infrastructure/Boston Geographical Infrastructure 2019/Scripts"))
+
+library(compare)
+library(stringr)
+library(tidyverse)
+
+### Determining the same properties with dissimilar GIS_ID ----------------------#
+##      Download the raw cross-sectional property assessment and land parcels 
+##      files from Analyze Boston
+
+# propassraw <- read_csv("../../../Property Assessment Data/Data/fy19fullpropassess_190322.csv") # downloaded from AB: https://data.boston.gov/dataset/property-assessment
+# parcelsraw <- read_csv("../Data/Parcels_raw_190322.csv") # downloaded from AB: https://data.boston.gov/dataset/parcels-20181
+
+#propassraw <- read.csv("D:\\Google Drive\\BARI Research Team Data Library\\Property Assessment Data\\Data\\property2020.csv") # uploading raw data
+propassraw <- read.csv("../Data/data2021-full.csv")
+
+#propassraw <- read.csv("C:\\Users\\bariuser2\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2020\\Outputs\\Prelim\\PAD2020_rawdata_data_boston_gov.csv")
+
+##SSH
+
+# 1. Determine without doubt that GIS_ID and PID_LONG (or the most current Parcel
+#       ID in the parcels file) refer to the same unit
+## update August 2021: the column ST_NAME_SUF does not exist anymore;the PTYPE column changed name to LUC ##
+# prop18 <- subset(propassraw, select = c("PID","CM_ID","GIS_ID","ST_NUM",
+#                                         "ST_NAME","ST_NAME_SUF",
+#                                         "UNIT_NUM","ZIPCODE","OWNER",
+#                                         "PTYPE","LU","LAND_SF",
+#                                         "YR_BUILT")) # 172841
+prop18 <- subset(propassraw, select = c("PID","CM_ID","GIS_ID","ST_NUM",
+                                        "ST_NAME",
+                                        "UNIT_NUM","ZIPCODE","OWNER",
+                                        "LUC", "LU","LAND_SF",
+                                        "YR_BUILT")) # 177,091
+rm(propassraw)
+
+# 1.a Creating vectors of just GIS_ID and PID_LONG
+gisid <- prop18$GIS_ID[!duplicated(prop18$GIS_ID)]
+# pidlong <- parcelsraw$PID_LONG[!duplicated(parcelsraw$PID_LONG)]
+
+#   Determining the difference between them visually
+# View(table(setdiff(gisid, pidlong)))
+# prop18_diff <- subset(prop18, 
+#                       prop18$GIS_ID %in% c(setdiff(gisid, pidlong)))
+
+
+#### SSH - This part is to remove repeated addresess - if !duplicated right now, nrow = 172477
+# 2. Cleaning the street numbers to separate the range of street numbers. 
+#       This is required for expanding individual addresses
+
+#   Creating a reference ID to see the change in the range of numbers after
+#   as.numeric()
+prop18$FullID <- paste(prop18$PID,prop18$ST_NUM,prop18$ST_NAME,prop18$ST_NAME_SUF,
+                       prop18$ZIPCODE,prop18$GIS_ID)
+
+#### SSH - not separating the ranges at this point
+prop18 <- separate(prop18, ST_NUM, into = c("num1","num2"), sep = " ")
+
+#       Reformatting the dataset for easier manipulation
+prop18_sub <- prop18 %>%
+    mutate(pid = PID,
+           num1 = num1,
+           num2 = num2,
+           # street_num = ST_NUM,
+           street_c = ST_NAME,
+           #suffix_c = ST_NAME_SUF, #this does not exist in 2021
+           zip_c = ZIPCODE,
+           GIS_ID = GIS_ID) %>%
+    #select(FullID, pid, num1, num2, street_c, suffix_c, zip_c, GIS_ID) # 172841
+     select(FullID, pid, num1, num2, street_c, zip_c, GIS_ID)
+
+#### let's separate street_num ranges into rows
+
+# 
+# prop18_sub$street_num <- gsub("[^0-9\\.]", " ", prop18_sub$street_num) 
+# prop18_adds <- separate_rows(prop18_sub, street_num, convert = TRUE) # 212872
+# prop18_adds$id <- paste(prop18_adds$pid,prop18_adds$street_num,
+#                        prop18_adds$street_c,prop18_adds$suffix_c,prop18_adds$zip_c,
+#                        prop18_adds$GIS_ID,
+#                        sep = "+")
+# 
+# sum(duplicated(prop18_adds$id)) # 16402
+# 
+# prop18_adds <- prop18_adds[!duplicated(prop18_adds$id),] # 196470
+# prop18_adds$FullID <- paste(prop18_adds$pid,
+#                        prop18_adds$street_c,prop18_adds$suffix_c,prop18_adds$zip_c,
+#                        prop18_adds$GIS_ID)
+# 
+# prop18_adds$flag <- ifelse(is.na(prop18_adds$street_num) & duplicated(prop18_adds$FullID), 0, 1)
+# 
+# prop18_adds <- prop18_adds %>%
+#   filter(flag == 1) # 191914
+#### SSH this is a properties file with the information we have on the street numbers without full expansion
+##### skip the rest
+
+#       need to convert street num1 into a numeric for future use
+prop18_sub$num1 <- as.numeric(prop18_sub$num1)
+
+# 2.1 changing the num2 address to equal num1 if num1 was NA. This makes 
+#       it easier to identify individual addresses
+prop18_sub$num2 <- ifelse(is.na(prop18_sub$num2),prop18_sub$num1, as.numeric(prop18_sub$num2))
+
+# 3. Creating a unique id for each row (which is each variable in the entire row 
+#       pasted together)
+# prop18_sub$id <- paste(prop18_sub$pid,prop18_sub$num1,prop18_sub$num2,
+#                        prop18_sub$street_c,prop18_sub$suffix_c,prop18_sub$zip_c,
+#                        prop18_sub$GIS_ID,
+#                        sep = "+")
+prop18_sub$id <- paste(prop18_sub$pid,prop18_sub$num1,prop18_sub$num2,
+                       prop18_sub$street_c,prop18_sub$zip_c,
+                       prop18_sub$GIS_ID,
+                       sep = "+") #remove prop18_sub$suffix_c in 2021
+#       Getting rid of duplicates
+prop18_sub <- prop18_sub[!duplicated(prop18_sub$id),]
+
+#### SSH - nrow = 171922
+
+#### SSH - not doing the expansion anymore due to possible duplication
+#### but we still need to separate unit ranges to addresses 
+
+
+
+
+# 4. Some of the address numbers range from high to low (e.g. 4-2 rather than 2-4).
+        # This switches the range back from low to high
+prop18_sub <- prop18_sub %>%
+    group_by(num1>num2) %>%
+    mutate(to=num1,
+           from=num2) %>%
+    mutate(num1=from,
+           num2=to) %>%
+    ungroup() %>%
+    #select(pid, num1, num2, street_c, suffix_c, zip_c, GIS_ID, FullID)
+    select(pid, num1, num2, street_c, zip_c, GIS_ID, FullID)
+
+# 4.1 This creates a new dataframe from the single (e.g. 1-2) ranges of addresses 
+#       (all others are assumed to be from an odd or even range) 
+prop18_one <- prop18_sub %>%
+    filter(num2 == num1+1)%>%
+    rowwise()%>%
+    do(data.frame(FullID=.$FullID, pid=.$pid, addressnum=seq(.$num1, .$num2, by=1),
+                  street_c=.$street_c, zip_c=.$zip_c,
+                  GIS_ID=.$GIS_ID)) # suffix_c=.$suffix_c removed 2021
+
+# 4.2 This creates a new dataframe from the divisible by 2 (e.g. 2-4) range of 
+#       addresses (where each address is assumed to be on one side of the street 
+#       at odd or even intervals)
+prop18_two <- prop18_sub %>%
+    filter(num1 < num2 & num1 != num2+1 & num2 - num1 < 21)%>%
+    rowwise()%>%
+    do(data.frame(FullID=.$FullID, pid=.$pid, addressnum=seq(.$num1, .$num2, by=2),
+                  street_c=.$street_c, zip_c=.$zip_c,
+                  GIS_ID=.$GIS_ID))  # suffix_c=.$suffix_c removed in 2021
+
+# 4.3 Creating a new dataframe from the individual addresses without range
+prop18_three <- prop18_sub %>%
+    filter(c(num1 == num2 | (num1>=0 & is.na(num2))))%>%
+    mutate(addressnum=.$num1)%>%
+    select(FullID,pid,addressnum,street_c,zip_c,GIS_ID) #suffix_c, removed in 2021
+
+# 4.4 Creating dataframe for addresses on with a num2
+prop18_four <- prop18_sub %>%
+    filter(c(is.na(num1) & num2 >= 0)) %>%
+    mutate(addressnum = .$num2) %>%
+    select(FullID,pid,addressnum,street_c,zip_c,GIS_ID) #suffix_c, removed in 2021
+
+# 4.5 Creating dataframe from the NA addresses
+prop18_five <- prop18_sub %>%
+    filter(c(is.na(num1) & is.na(num2))) %>%
+    mutate(addressnum= "-") %>%
+    select(FullID,pid,addressnum,street_c,zip_c,GIS_ID) #suffix_c, removed in 2021
+
+# 4.6 Creating a dataframe for the addresses numbers that APPARENTLY won't switch
+prop18_six <- prop18_sub %>%
+    filter(num1+1==num2) %>%
+    rowwise()%>%
+    do(data.frame(FullID=.$FullID, pid=.$pid, addressnum=seq(.$num1, .$num2, by=1),
+                  street_c=.$street_c, zip_c=.$zip_c,
+                  GIS_ID=.$GIS_ID)) # suffix_c=.$suffix_c, removed in 2021
+
+# 4.7 Creating a dataframe for the addresses numbers that wouldn't switch and
+#       range by 2
+prop18_seven <- prop18_sub %>%
+    filter(c((num1>num2) & num2 != (num1+1) & num1 - num2 < 21)) %>%
+    rowwise()%>%
+    do(data.frame(FullID=.$FullID, pid=.$pid, addressnum=seq(.$num2, .$num1, by=2),
+                  street_c=.$street_c, zip_c=.$zip_c,
+                  GIS_ID=.$GIS_ID)) # suffix_c=.$suffix_c removed in 2021
+
+# 4.8 Creating a dataframe for num2 - num1 > 21
+
+prop18_eight <- prop18_sub %>%
+    filter(abs(num1 - num2) > 21) %>%
+    rowwise()%>%
+    do(data.frame(FullID=.$FullID, pid=.$pid, addressnum=paste(.$num2, .$num1, sep = "-"),
+                  street_c=.$street_c, zip_c=.$zip_c,
+                  GIS_ID=.$GIS_ID)) # suffix_c=.$suffix_c removed in 2021
+
+
+# 5. Adding all of the dataframes together and creating unique IDs for 
+#       Land_Parcel_ID conversion
+prop18_adds <- rbind(prop18_one,prop18_two,prop18_three,prop18_four,prop18_five,
+                     prop18_six, prop18_seven, prop18_eight) # 207015
+
+
+# 5.1 Check to make sure all GIS_IDs transfered from prop18_sub to prop18_adds
+View(table(setdiff(prop18_sub$GIS_ID, prop18_adds$GIS_ID))) # this should be empty
+
+#   Add fulladdress variable for checks and fulladdress+pid to rid duplicates
+prop18_adds$fulladdress <- paste(prop18_adds$addressnum,prop18_adds$street_c,
+                                 prop18_adds$zip_c) #prop18_adds$suffix_c removed 2021
+prop18_adds$gisaddress <- paste(prop18_adds$addressnum,prop18_adds$street_c,
+                                prop18_adds$zip_c,
+                                prop18_adds$GIS_ID) #prop18_adds$suffix_c, removed 2021
+prop18_adds$fulladdressp <- paste(prop18_adds$addressnum,prop18_adds$street_c,
+                                  prop18_adds$zip_c,
+                                  prop18_adds$pid) #prop18_adds$suffix_c removed 2021
+prop18_adds <- prop18_adds[!duplicated(prop18_adds$fulladdressp),]
+prop18_adds$Land_Parcel_ID <- NA
+
+prop18_adds$nastreet <- ifelse(prop18_adds$addressnum == "-",1,0) # 206958
+
+# 6. Creating a vector of duplicated fulladdress since duplicated() will negate
+#       the first match
+# duplicates <- prop18_adds %>%
+#     filter(duplicated(fulladdress) & nastreet==0) %>%
+#     select("fulladdress")
+# doing a different way:
+duplicates <- prop18_adds[which(duplicated(prop18_adds$fulladdress) & prop18_adds$nastreet==0),"fulladdress"] # 84638
+
+
+# duplicates <- prop18_adds[which(duplicated(prop18_adds$fulladdress)), "fulladdress"] # 83475
+
+# 6.1 Making a dummy-variable of duplicated fulladdresses
+
+prop18_adds$dupadd = ifelse(prop18_adds$fulladdress %in% duplicates$fulladdress, 1, 0)
+prop18_adds$Land_Parcel_ID = ifelse(prop18_adds$dupadd==0, prop18_adds$GIS_ID, NA) # 206958
+
+# prop18_adds <- prop18_adds %>%
+#     mutate(dupadd = ifelse(fulladdress %in% duplicates$fulladdress, 1, 0),
+#            Land_Parcel_ID = ifelse(dupadd==0, GIS_ID, NA)) 
+
+# 7. Using aggregate to find the minimum shared GIS_ID among duplicated fulladdress
+mingis <- aggregate(GIS_ID~fulladdress, prop18_adds[prop18_adds$dupadd==1,],
+                    FUN = min)
+
+# 7.1 Creating a dummy-variable for the minimum GIS_ID
+mingis$lowgis <- 1
+
+# 7.2 Merging the minimum GIS_ID dataframe onto the full dataframe and cleaning
+#       the final dataframe
+prop18_adds <- left_join(prop18_adds, mingis, by=c("fulladdress")) # 206958
+
+prop18_adds <- prop18_adds %>%
+    group_by(lowgis==1) %>%
+    mutate(Land_Parcel_ID = ifelse(!is.na(GIS_ID.y), GIS_ID.y, GIS_ID.x)) %>%
+    ungroup() %>%
+    mutate(GIS_ID=GIS_ID.x) %>%
+    select(pid, addressnum, street_c, zip_c, fulladdress, GIS_ID, Land_Parcel_ID) # 176,925 #suffix_c removed 2021
+    
+
+
+# write_csv(prop18_adds, path = "../Data/PropertiesToParcels190410.csv")
+
+## SSH
+write.csv(prop18_adds, "../Outputs/PropertiesToParcels08032021.csv", row.names = F)
+
+# some sanity checks
+prop18_adds %>%
+  group_by(Land_Parcel_ID, GIS_ID) %>%
+  tally() %>%
+  arrange(desc(n))
+
+prop18_adds %>%
+   group_by(Land_Parcel_ID) %>%
+   summarise(n_distinct(GIS_ID)) %>%
+   View()
+```
+
+

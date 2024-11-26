@@ -1,0 +1,455 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# set the working directory to the BARI shared drive
+BARI <- "D:/Google Drive/BARI Research Team Data Library/"
+
+### Cleaning Functions ###
+#source(paste0(BARI,"/HG-Functions/Cleaning_functions_20190326.R"))
+#source(paste0(BARI,"/HG-Functions/Geocoding_functions_20190326.R"))
+#source(paste0(BARI,"/HG-Functions/Helper_functions_20190326.R"))
+source("D:\\BARI\\Property Assesment\\R scripts\\Cleaning_functions_20190326.R")
+source("D:\\BARI\\Property Assesment\\R scripts\\Geocoding_functions_20190326.R")
+source("D:\\BARI\\Property Assesment\\R scripts\\Helper_functions_20190326.R")
+
+### INPUT PATHS ###
+paloldyr_path = "Property Assessment Data/Data/PADLong.Record.052021.csv"
+
+pacnewyr_path = "Property Assessment Data/Outputs/PADCross.Record.022022.csv"
+
+blockGroupsShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2018/Data/Census2020_BlockGroups"
+blockGroupsShpName = "Census2020_BlockGroups"
+
+#tractsShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2020/Data/Census2020_Tracts"
+tractsShpPath = "D:\\BARI\\Property Assesment\\Data\\census2020_tracts\\Census2020_Tracts"
+
+tractsShpName = "Census2020_Tracts"
+
+    # THESE PATHS WILL NEED TO CHANGE WITH THE G.I. #
+IDconnectorPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2018/Data/IDConnector.2018.csv"
+
+landParcelsPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2021/Outputs/Parcel_final_2021_08172021.csv"
+
+
+# OUTPUT PATHS
+pal_path = "Property Assessment Data/Outputs/PADLong.Record.022022.csv"
+pal_ct_path = "Property Assessment Data/Outputs/PADLong.CT.022022.csv"
+pal_ct_shp_path = "Property Assessment Data/Outputs/Tract Shp Long"
+pal_ct_shp_name = "PADLong.CT.022022"
+
+pal_bg_path = "Property Assessment Data/Outputs/PADLong.CBG.022022.csv"
+pal_bg_shp_path = "Property Assessment Data/Outputs/BG Shp Long"
+pal_bg_shp_name = "PADLong.CBG.022022"
+
+
+# READ IN FILES
+palold = read.csv(paste0(BARI, paloldyr_path),stringsAsFactors = FALSE)
+PA <- read.csv(paste0(BARI, pacnewyr_path),stringsAsFactors = FALSE)
+bgsShp = readOGR(paste0(BARI, blockGroupsShpPath),blockGroupsShpName)
+ctsShp = readOGR(paste0(BARI, tractsShpPath),tractsShpName)
+
+IDconnector = read.csv(paste0(BARI,IDconnectorPath), stringsAsFactors=F)
+landParcels = read.csv(paste0(BARI, landParcelsPath), stringsAsFactors=F)
+
+
+#  adding 2018 data 
+# doesnt have these "BRA_PD","NSA_NAME"
+
+names(PA)[1] <- "parcel_num"
+names(palold)[1] <- "parcel_num"
+PA.toAdd <- PA[!duplicated(PA$parcel_num),c("parcel_num","CM_ID","ST_NUM","ST_NAME",
+                                            "LU","TOTAL_VALUE","OWN_OCC","X",
+                                            "Y","GIS_ID","Land_Parcel_ID","TLID",
+                                            "Blk_ID_20","BG_ID_20","CT_ID_20", "unit_N", "unit_N_orig")]
+
+    # THE NAMES OF THE FY WILL NEED TO CHANGE #
+names(PA.toAdd)<-c("parcel_num","CM_ID","ST_NUM","ST_NAME",
+                   "FY2021.LU","FY2021.AV","FY2021.RESEX","X","Y","GIS_ID",
+                   "Land_Parcel_ID","TLID","Blk_ID_20","BG_ID_20","CT_ID_20", "unit_N", "unit_N_orig")
+
+
+
+
+# remove old geographic data
+for (var in c("X","Y","GIS_ID","Land_Parcel_ID","TLID","Blk_ID_20","BG_ID_20","CT_ID_20",
+              "BRA_PD","NSA_NAME","Location_ID","CM_ID","ST_NUM","ST_NAME", "unit_N", "unit_N_orig")) {
+    palold[,var] = NULL
+}
+# merge on 2019 data
+pal = merge(PA.toAdd,palold,by="parcel_num",all=TRUE)
+
+sum(is.na(pal$FY2020.LU) & !is.na(pal$FY2021.LU))
+# 36 new rows
+# add geo data for old TAL, this is to include any changes that might have been made to 
+# the GI for the old TAL rows, their parcel_nums have been matched to GIS_IDs that are in 
+# the land parcels file first we merge onto the IDConnector,then the land parcels
+
+# landParcels = dplyr::rename(landParcels, TLID = TLID_1)
+pal = merge(
+    merge(pal,IDconnector[!duplicated(IDconnector$parcel_num),c("parcel_num","GIS_ID",
+                                                                "Land_Parcel_ID")],
+          by="parcel_num",all.x=T),
+    landParcels[,c("X","Y","Land_Parcel_ID","TLID","Blk_ID_20","BG_ID_20","CT_ID_20")],
+    
+    by.x="Land_Parcel_ID.y",by.y = "Land_Parcel_ID",all.x=T)
+# adds in the merged in geographic data, but keeps the original data for those that did 
+#   not need the merged data
+for (var in c("X","Y","GIS_ID","Land_Parcel_ID","TLID","Blk_ID_20","BG_ID_20","CT_ID_20"
+              )) {
+    pal[,var] = ifelse(!is.na(pal[,paste(var,".x",sep="")]),
+                       pal[,paste(var,".x",sep="")],
+                       pal[,paste(var,".y",sep="")])
+    pal[,paste(var,".x",sep="")] = NULL
+    pal[,paste(var,".y",sep="")] = NULL
+}
+
+
+pal_bckup <- pal
+# pal <- pal_bckup
+#--------------------------------#
+#       Adding Extra Vars        #
+#--------------------------------#
+# Modify Assessed Value Variables #
+    # THIS WILL NEED TO CHANGE BASED ON PREVIOUS YEAR #
+lastyear=2021
+
+# calculates the change in valuation year to year 
+# Where assessed value is $0, set it to be NA
+for (year in c(2000:lastyear)) {
+    av = paste("FY",paste(year,".AV",sep=""),sep="")
+    pal[,av] = ifelse(pal[,av] >0 & !is.na(pal[,av]),pal[,av],NA)
+    if (!is.na(lastyear)) {
+        diff = paste("DiffAV",year,sep="")
+        avly = paste("FY",paste(lastyear,".AV",sep=""),sep="")
+        pal[,diff] = pal[,av]-pal[,avly]
+        perc = paste("PercChangeAV",year,sep="")
+        pal[,perc] = pal[,diff]/pal[,avly]
+    }
+    lastyear = year
+}
+
+
+# Calculate change during growth, crash, and recovery periods
+#  -- Calculate median value in Boston for each year
+apply(pal[,paste(paste("FY",c(2000:lastyear),sep=""),".AV",sep="")], 2,median, na.rm=TRUE)            
+# Results:
+# min = 2020
+# max = 2021
+# 2nd min = 2000
+# Therefore, 
+# growth years = 2000 - 2007 and 2011 to 2019
+# crash years = 2007 - 2011 and 2019 to 2020
+# recovery years = 2011 - 2019
+
+# Step 3 -- Create variables for value difference in each time period
+    # THIS WILL NEED TO CHANGE BASED ON PREVIOUS YEAR # 
+pal$GrowthDiffAV <- pal$FY2007.AV-pal$FY2000.AV
+pal$GrowthPercChangeAV <- (pal$FY2007.AV-pal$FY2000.AV)/pal$FY2000.AV * 100
+pal$CrashDiffAV <- pal$FY2011.AV-pal$FY2007.AV
+pal$CrashPercChangeAV <- (pal$FY2011.AV-pal$FY2007.AV)/pal$FY2007.AV * 100
+pal$RecoveryDiffAV <- pal$FY2020.AV-pal$FY2011.AV
+pal$RecoveryPercChangeAV <- (pal$FY2020.AV-pal$FY2011.AV)/pal$FY2011.AV * 100
+
+
+# ----------------------------------------------------------------
+# Broader Land Use Categories ####
+
+# Group land use codes into 4 simplified categories####
+
+#Res= R1, R2, R3, R4, RL, A, CD, CP
+#Comm= CC, C, CL, CM, RC
+#Ind= I, AH
+#Exem= E, EA
+
+variables_ordered = c("parcel_num","CM_ID","ST_NUM","ST_NAME","unit_N", "unit_N_orig",
+                      "ZIPCODE")
+for (year in c(2000:lastyear)) {
+    fourcat = paste(paste("LU",year,sep=""),"FourCat",sep="")
+    lu = paste("FY",paste(year,".LU",sep=""),sep="")
+    pal[,fourcat] = ifelse(!is.na(match(pal[,lu],c("R1","R2","R3","R4","RL","A","CD",
+                                                   "CP"))),"Res",
+                           ifelse(!is.na(match(pal[,lu],c("CC","C","CL","CM","RC"))),
+                                  "Comm",
+                                  ifelse(!is.na(match(pal[,lu],c("I","AH"))),"Ind",
+                                         ifelse(!is.na(match(pal[,lu],c("E","EA"))),"Exem",
+                                                NA))))
+    av = paste("FY",paste(year,".AV",sep=""),sep="")
+    resex = paste("FY",paste(year,".RESEX",sep=""),sep="")
+    if (year != 2000) {
+        diffav = paste("DiffAV",year,sep="")
+        percChange = paste("PercChangeAV",year,sep="")
+        variables_ordered = c(variables_ordered,lu,av,resex,diffav,percChange,fourcat)
+    }
+    else {
+        variables_ordered = c(variables_ordered,lu,av,resex,fourcat)
+        
+    }
+}
+variables_ordered = c(variables_ordered,
+                      "GrowthDiffAV","GrowthPercChangeAV","CrashDiffAV",
+                      "CrashPercChangeAV","RecoveryDiffAV","RecoveryPercChangeAV","X","Y",
+                      "GIS_ID","Land_Parcel_ID","TLID","Blk_ID_20","BG_ID_20","CT_ID_20"
+                      )
+
+
+
+
+#ordering variables
+pal = pal[,variables_ordered] # 176989
+
+
+pal <- pal[!duplicated(pal),] # 176988
+
+#TLID <- read.csv("D:\\Google Drive\\BARI Research Team Data Library\\Geographical Infrastructure\\Boston Geographical Infrastructure 2020\\Outputs\\Parcel_final_2020_08182020.csv")
+
+TLID <- read.csv(file.choose())
+
+TLID$TLID <- format(TLID$TLID, scientific = F)
+pal$TLID <- TLID$TLID[match(pal$Land_Parcel_ID,TLID$Land_Parcel_ID)]
+names(pal)[1] <- "PID"
+# write pal17
+# drops <- "unit_N" 
+# pal <- pal[ , !(names(pal) %in% drops)]
+pal$PID <- format(pal$PID, scientific = F)
+
+#names(pal)[151] <- "CT_ID_20"
+write.csv(pal, paste0(BARI, pal_path), row.names=F)
+
+
+####################
+# pal <- read.csv("D:/Google Drive/BARI Research Team Data Library/Property Assessment Data/Outputs/PADLong.Record.2020.csv")
+
+lastyear = 2021
+#make new condo vars for aggregation
+for (year in c(2001:lastyear)) {
+    nc = paste("NewCondo",year,sep="")
+    prevyear = year -1
+    thisyearLU = paste(paste("FY",year,sep=""),".LU",sep="")
+    prevyearLU = paste(paste("FY",prevyear,sep=""),".LU",sep="")
+    thisyearmatch = match(pal[,thisyearLU],c("CD","CP","CM"))
+    prevyearmatch = match(pal[,prevyearLU],c("CD","CP","CM"))
+    pal[,nc] = ifelse(!is.na(thisyearmatch) & is.na(prevyearmatch),1,
+                      ifelse(!is.na(prevyearmatch) & is.na(thisyearmatch), -1, 0))
+}
+
+
+## Aggregate sum change in assessed value over each year by census tract
+# pal.CT <- aggregate(cbind(as.numeric(DiffAV2001),as.numeric(DiffAV2002),
+#                           as.numeric(DiffAV2003),as.numeric(DiffAV2004),
+#                           as.numeric(DiffAV2005),as.numeric(DiffAV2006),
+#                           as.numeric(DiffAV2007),as.numeric(DiffAV2008),
+#                           as.numeric(DiffAV2009),as.numeric(DiffAV2010),
+#                           as.numeric(DiffAV2011),as.numeric(DiffAV2012),
+#                           as.numeric(DiffAV2013),as.numeric(DiffAV2014),
+#                           as.numeric(DiffAV2015),as.numeric(DiffAV2016),
+#                           as.numeric(DiffAV2017),as.numeric(DiffAV2018),
+#                           NewCondo2001, NewCondo2002, NewCondo2003, NewCondo2004, 
+#                           NewCondo2005, NewCondo2006, NewCondo2007, NewCondo2008, 
+#                           NewCondo2009, NewCondo2010, NewCondo2011, NewCondo2012, 
+#                           NewCondo2013, NewCondo2014, NewCondo2015, NewCondo2016, 
+#                           NewCondo2017, NewCondo2018) ~ CT_ID_10, pal, sum, na.rm = TRUE)
+
+pal.CT <- pal %>%
+  filter(!is.na(CT_ID_20)) %>%
+  group_by(CT_ID_20) %>%
+  summarise(DiffAV2001 = sum(DiffAV2001, na.rm = T), DiffAV2002 = sum(DiffAV2002, na.rm = T), DiffAV2003 = sum(DiffAV2003, na.rm = T), DiffAV2004 = sum(DiffAV2004, na.rm = T), DiffAV2005 = sum(DiffAV2005, na.rm = T), DiffAV2006 = sum(DiffAV2006, na.rm = T), DiffAV2007 = sum(DiffAV2007, na.rm = T), DiffAV2008 = sum(DiffAV2008, na.rm = T), DiffAV2009 = sum(DiffAV2009, na.rm = T), DiffAV2010 = sum(DiffAV2010, na.rm = T), DiffAV2011 = sum(DiffAV2011, na.rm = T), DiffAV2012 = sum(DiffAV2012, na.rm = T), DiffAV2013 = sum(DiffAV2013, na.rm = T), DiffAV2014 = sum(DiffAV2014, na.rm = T), DiffAV2015 = sum(DiffAV2015, na.rm = T), DiffAV2016 = sum(DiffAV2016, na.rm = T), DiffAV2017 = sum(DiffAV2017, na.rm = T), DiffAV2018 = sum(DiffAV2018, na.rm = T), DiffAV2019 = sum(DiffAV2019, na.rm = T), DiffAV2020 = sum(DiffAV2020, na.rm = T),DiffAV2021 = sum(DiffAV2021, na.rm = T), NewCondo2001 = sum(NewCondo2001, na.rm = T), NewCondo2002 = sum(NewCondo2002, na.rm = T), NewCondo2003 = sum(NewCondo2003, na.rm = T), NewCondo2004 = sum(NewCondo2004, na.rm = T), NewCondo2005 = sum(NewCondo2005, na.rm = T), NewCondo2006 = sum(NewCondo2006, na.rm = T), NewCondo2007 = sum(NewCondo2007, na.rm = T), NewCondo2008 = sum(NewCondo2008, na.rm = T), NewCondo2009 = sum(NewCondo2009, na.rm = T), NewCondo2010 = sum(NewCondo2010, na.rm = T), NewCondo2011 = sum(NewCondo2011, na.rm = T), NewCondo2012 = sum(NewCondo2012, na.rm = T), NewCondo2013 = sum(NewCondo2013, na.rm = T), NewCondo2014 = sum(NewCondo2014, na.rm = T), NewCondo2015 = sum(NewCondo2015, na.rm = T), NewCondo2016 = sum(NewCondo2016, na.rm = T), NewCondo2017 = sum(NewCondo2017, na.rm = T), NewCondo2018 = sum(NewCondo2018), NewCondo2019 = sum(NewCondo2019), NewCondo2020 = sum(NewCondo2020, na.rm = T),NewCondo2021 = sum(NewCondo2021, na.rm = T))
+
+names(pal.CT)[1:(length(c(2001:lastyear))+1)] <- c("CT_ID_10",
+                                                   "SumDiffAV2001","SumDiffAV2002",
+                                                   "SumDiffAV2003","SumDiffAV2004",
+                                                   "SumDiffAV2005","SumDiffAV2006",
+                                                   "SumDiffAV2007","SumDiffAV2008",
+                                                   "SumDiffAV2009","SumDiffAV2010",
+                                                   "SumDiffAV2011","SumDiffAV2012",
+                                                   "SumDiffAV2013","SumDiffAV2014",
+                                                   "SumDiffAV2015","SumDiffAV2016",
+                                                   "SumDiffAV2017","SumDiffAV2018",
+                                                   "SumDiffAV2019","SumDiffAV2020",
+                                                   "SumDiffAV2021")
+
+
+## Aggregate median percentage change in assessed value over each year by census tract
+# Median_PercentValueChangeYear_CT_Yearly <- aggregate(cbind(PercChangeAV2001,
+#                                                            PercChangeAV2002,
+#                                                            PercChangeAV2003,
+#                                                            PercChangeAV2004,
+#                                                            PercChangeAV2005,
+#                                                            PercChangeAV2006,
+#                                                            PercChangeAV2007,
+#                                                            PercChangeAV2008,
+#                                                            PercChangeAV2009,
+#                                                            PercChangeAV2010,
+#                                                            PercChangeAV2011,
+#                                                            PercChangeAV2012,
+#                                                            PercChangeAV2013,
+#                                                            PercChangeAV2014,
+#                                                            PercChangeAV2015,
+#                                                            PercChangeAV2016,
+#                                                            PercChangeAV2017,
+#                                                            PercChangeAV2018,
+#                                                            GrowthPercChangeAV,
+#                                                            CrashPercChangeAV,
+#                                                            RecoveryPercChangeAV) 
+#                                                      ~ CT_ID_10, pal, median, na.rm=TRUE)
+
+Median_PercentValueChangeYear_CT_Yearly <- pal %>%
+  filter(!is.na(CT_ID_20)) %>%
+  group_by(CT_ID_20) %>%
+  summarise(PercChangeAV2001 = median(PercChangeAV2001, na.rm = T), PercChangeAV2002 = median(PercChangeAV2002, na.rm = T), PercChangeAV2003 = median(PercChangeAV2003, na.rm = T), PercChangeAV2004 = median(PercChangeAV2004, na.rm = T), PercChangeAV2005 = median(PercChangeAV2005, na.rm = T), PercChangeAV2006 = median(PercChangeAV2006, na.rm = T), PercChangeAV2007 = median(PercChangeAV2007, na.rm = T), PercChangeAV2008 = median(PercChangeAV2008, na.rm = T), PercChangeAV2009 = median(PercChangeAV2009, na.rm = T), PercChangeAV2010 = median(PercChangeAV2010, na.rm = T), PercChangeAV2011 = median(PercChangeAV2011, na.rm = T), PercChangeAV2012 = median(PercChangeAV2012, na.rm = T), PercChangeAV2013 = median(PercChangeAV2013, na.rm = T), PercChangeAV2014 = median(PercChangeAV2014, na.rm = T), PercChangeAV2015 = median(PercChangeAV2015, na.rm = T), PercChangeAV2016 = median(PercChangeAV2016, na.rm = T), PercChangeAV2017 = median(PercChangeAV2017, na.rm = T), PercChangeAV2018 = median(PercChangeAV2018, na.rm = T), PercChangeAV2019 = median(PercChangeAV2019, na.rm = T), PercChangeAV2020 = median(PercChangeAV2020, na.rm = T),PercChangeAV2021 = median(PercChangeAV2021, na.rm = T), GrowthPercChangeAV = median(GrowthPercChangeAV, na.rm = T), CrashPercChangeAV = median(CrashPercChangeAV, na.rm = T), RecoveryPercChangeAV = median(RecoveryPercChangeAV, na.rm = T))
+
+pal.CT <- merge(pal.CT,Median_PercentValueChangeYear_CT_Yearly,by = "CT_ID_20")
+
+
+#keeping only certain vars (so... didn't need to make condo vars? )
+pal.CT = pal.CT[,c(
+    "CT_ID_20",
+    "SumDiffAV2001","PercChangeAV2001","NewCondo2001" ,
+    "SumDiffAV2002","PercChangeAV2002","NewCondo2002" ,
+    "SumDiffAV2003","PercChangeAV2003","NewCondo2003" ,
+    "SumDiffAV2004","PercChangeAV2004","NewCondo2004" ,
+    "SumDiffAV2005","PercChangeAV2005","NewCondo2005" ,
+    "SumDiffAV2006","PercChangeAV2006","NewCondo2006" ,
+    "SumDiffAV2007","PercChangeAV2007","NewCondo2007" ,
+    "SumDiffAV2008","PercChangeAV2008","NewCondo2008" ,
+    "SumDiffAV2009","PercChangeAV2009","NewCondo2009" ,
+    "SumDiffAV2010","PercChangeAV2010","NewCondo2010" ,
+    "SumDiffAV2011","PercChangeAV2011","NewCondo2011" ,
+    "SumDiffAV2012","PercChangeAV2012","NewCondo2012" ,
+    "SumDiffAV2013","PercChangeAV2013","NewCondo2013" ,
+    "SumDiffAV2014","PercChangeAV2014","NewCondo2014" ,
+    "SumDiffAV2015","PercChangeAV2015","NewCondo2015" ,
+    "SumDiffAV2016","PercChangeAV2016","NewCondo2016" ,
+    "SumDiffAV2017","PercChangeAV2017","NewCondo2017" ,
+    "SumDiffAV2018","PercChangeAV2018","NewCondo2018" ,
+    "SumDiffAV2019","PercChangeAV2019","NewCondo2019" ,
+    "SumDiffAV2020","PercChangeAV2020","NewCondo2020" ,
+    "SumDiffAV2021","PercChangeAV2021","NewCondo2021" ,
+    "GrowthPercChangeAV","CrashPercChangeAV" , "RecoveryPercChangeAV" )]
+
+pal.CT <- pal.CT[-1,]
+#names(pal.CT)[1] <- "CT_ID_20"
+# write csv
+write.csv(pal.CT,paste0(BARI, pal_ct_path) , row.names=F)
+
+
+# merge onto ct shp file
+pal.CT.shp = merge(ctsShp,pal.CT,by.x = "GEOID20",by.y="CT_ID_20",all.x=T)
+# save shp file
+#writeOGR(pal.CT.shp,paste0(BARI, pal_ct_shp_path) ,pal_ct_shp_name,driver="ESRI Shapefile",
+#         overwrite_layer=TRUE)
+writeOGR(pal.CT.shp,pal_ct_shp_path ,pal_ct_shp_name,driver="ESRI Shapefile",
+         overwrite_layer=TRUE)
+
+#aggregate to BG
+
+# pal.BG <- aggregate(cbind(as.numeric(DiffAV2001),as.numeric(DiffAV2002),
+#                           as.numeric(DiffAV2003),as.numeric(DiffAV2004),
+#                           as.numeric(DiffAV2005),as.numeric(DiffAV2006),
+#                           as.numeric(DiffAV2007),as.numeric(DiffAV2008),
+#                           as.numeric(DiffAV2009),as.numeric(DiffAV2010),
+#                           as.numeric(DiffAV2011),as.numeric(DiffAV2012),
+#                           as.numeric(DiffAV2013),as.numeric(DiffAV2014),
+#                           as.numeric(DiffAV2015),as.numeric(DiffAV2016),
+#                           as.numeric(DiffAV2017),as.numeric(DiffAV2018),
+#                           NewCondo2001, NewCondo2002, NewCondo2003, NewCondo2004, 
+#                           NewCondo2005, NewCondo2006, NewCondo2007, NewCondo2008, 
+#                           NewCondo2009, NewCondo2010, NewCondo2011, NewCondo2012, 
+#                           NewCondo2013, NewCondo2014, NewCondo2015, NewCondo2016,
+#                           NewCondo2017, NewCondo2018) ~ BG_ID_10, pal, sum, na.rm = TRUE)
+
+
+pal.BG <- pal %>%
+  filter(!is.na(BG_ID_20)) %>%
+  group_by(BG_ID_20) %>%
+  summarise(DiffAV2001 = sum(DiffAV2001, na.rm = T), DiffAV2002 = sum(DiffAV2002, na.rm = T), DiffAV2003 = sum(DiffAV2003, na.rm = T), DiffAV2004 = sum(DiffAV2004, na.rm = T), DiffAV2005 = sum(DiffAV2005, na.rm = T), DiffAV2006 = sum(DiffAV2006, na.rm = T), DiffAV2007 = sum(DiffAV2007, na.rm = T), DiffAV2008 = sum(DiffAV2008, na.rm = T), DiffAV2009 = sum(DiffAV2009, na.rm = T), DiffAV2010 = sum(DiffAV2010, na.rm = T), DiffAV2011 = sum(DiffAV2011, na.rm = T), DiffAV2012 = sum(DiffAV2012, na.rm = T), DiffAV2013 = sum(DiffAV2013, na.rm = T), DiffAV2014 = sum(DiffAV2014, na.rm = T), DiffAV2015 = sum(DiffAV2015, na.rm = T), DiffAV2016 = sum(DiffAV2016, na.rm = T), DiffAV2017 = sum(DiffAV2017, na.rm = T), DiffAV2018 = sum(DiffAV2018, na.rm = T), DiffAV2019 = sum(DiffAV2019, na.rm = T), DiffAV2020 = sum(DiffAV2020, na.rm = T),DiffAV2021 = sum(DiffAV2021, na.rm = T), NewCondo2001 = sum(NewCondo2001, na.rm = T), NewCondo2002 = sum(NewCondo2002, na.rm = T), NewCondo2003 = sum(NewCondo2003, na.rm = T), NewCondo2004 = sum(NewCondo2004, na.rm = T), NewCondo2005 = sum(NewCondo2005, na.rm = T), NewCondo2006 = sum(NewCondo2006, na.rm = T), NewCondo2007 = sum(NewCondo2007, na.rm = T), NewCondo2008 = sum(NewCondo2008, na.rm = T), NewCondo2009 = sum(NewCondo2009, na.rm = T), NewCondo2010 = sum(NewCondo2010, na.rm = T), NewCondo2011 = sum(NewCondo2011, na.rm = T), NewCondo2012 = sum(NewCondo2012, na.rm = T), NewCondo2013 = sum(NewCondo2013, na.rm = T), NewCondo2014 = sum(NewCondo2014, na.rm = T), NewCondo2015 = sum(NewCondo2015, na.rm = T), NewCondo2016 = sum(NewCondo2016, na.rm = T), NewCondo2017 = sum(NewCondo2017, na.rm = T), NewCondo2018 = sum(NewCondo2018, na.rm = T), NewCondo2019 = sum(NewCondo2019, na.rm = T), NewCondo2020 = sum(NewCondo2020, na.rm = T),NewCondo2021 = sum(NewCondo2021, na.rm = T))
+
+
+names(pal.BG)[1:(length(c(2001:lastyear))+1)]  <- c("BG_ID_20",
+                                                    "SumDiffAV2001","SumDiffAV2002",
+                                                    "SumDiffAV2003","SumDiffAV2004",
+                                                    "SumDiffAV2005","SumDiffAV2006",
+                                                    "SumDiffAV2007","SumDiffAV2008",
+                                                    "SumDiffAV2009","SumDiffAV2010",
+                                                    "SumDiffAV2011","SumDiffAV2012",
+                                                    "SumDiffAV2013","SumDiffAV2014",
+                                                    "SumDiffAV2015","SumDiffAV2016",
+                                                    "SumDiffAV2017","SumDiffAV2018",
+                                                    "SumDiffAV2019","SumDiffAV2020",
+                                                    "SumDiffAV2021")
+
+
+# Median_PercentValueChangeYear_BG_Yearly <- aggregate(cbind(PercChangeAV2001,
+#                                                            PercChangeAV2002,
+#                                                            PercChangeAV2003,
+#                                                            PercChangeAV2004,
+#                                                            PercChangeAV2005,
+#                                                            PercChangeAV2006,
+#                                                            PercChangeAV2007,
+#                                                            PercChangeAV2008,
+#                                                            PercChangeAV2009,
+#                                                            PercChangeAV2010,
+#                                                            PercChangeAV2011,
+#                                                            PercChangeAV2012,
+#                                                            PercChangeAV2013,
+#                                                            PercChangeAV2014,
+#                                                            PercChangeAV2015,
+#                                                            PercChangeAV2016,
+#                                                            PercChangeAV2017,
+#                                                            PercChangeAV2018,
+#                                                            GrowthPercChangeAV,
+#                                                            CrashPercChangeAV, 
+#                                                            RecoveryPercChangeAV)
+#                                                      ~ BG_ID_10, pal, median, na.rm=TRUE)
+
+Median_PercentValueChangeYear_BG_Yearly <- pal %>%
+  filter(!is.na(BG_ID_20)) %>%
+  group_by(BG_ID_20) %>%
+  summarise(PercChangeAV2001 = median(PercChangeAV2001, na.rm = T), PercChangeAV2002 = median(PercChangeAV2002, na.rm = T), PercChangeAV2003 = median(PercChangeAV2003, na.rm = T), PercChangeAV2004 = median(PercChangeAV2004, na.rm = T), PercChangeAV2005 = median(PercChangeAV2005, na.rm = T), PercChangeAV2006 = median(PercChangeAV2006, na.rm = T), PercChangeAV2007 = median(PercChangeAV2007, na.rm = T), PercChangeAV2008 = median(PercChangeAV2008, na.rm = T), PercChangeAV2009 = median(PercChangeAV2009, na.rm = T), PercChangeAV2010 = median(PercChangeAV2010, na.rm = T), PercChangeAV2011 = median(PercChangeAV2011, na.rm = T), PercChangeAV2012 = median(PercChangeAV2012, na.rm = T), PercChangeAV2013 = median(PercChangeAV2013, na.rm = T), PercChangeAV2014 = median(PercChangeAV2014, na.rm = T), PercChangeAV2015 = median(PercChangeAV2015, na.rm = T), PercChangeAV2016 = median(PercChangeAV2016, na.rm = T), PercChangeAV2017 = median(PercChangeAV2017, na.rm = T), PercChangeAV2018 = median(PercChangeAV2018, na.rm = T), PercChangeAV2019 = median(PercChangeAV2019, na.rm = T), PercChangeAV2020 = median(PercChangeAV2020, na.rm = T),PercChangeAV2021 = median(PercChangeAV2021, na.rm = T), GrowthPercChangeAV = median(GrowthPercChangeAV, na.rm = T), CrashPercChangeAV = median(CrashPercChangeAV, na.rm = T), RecoveryPercChangeAV = median(RecoveryPercChangeAV, na.rm = T))
+
+pal.BG <- merge(pal.BG,Median_PercentValueChangeYear_BG_Yearly,by = "BG_ID_20", all.x = T)
+
+
+
+pal.BG = pal.BG[,c(
+    "BG_ID_20",
+    "SumDiffAV2001","PercChangeAV2001","NewCondo2001" ,
+    "SumDiffAV2002","PercChangeAV2002","NewCondo2002" ,
+    "SumDiffAV2003","PercChangeAV2003","NewCondo2003" ,
+    "SumDiffAV2004","PercChangeAV2004","NewCondo2004" ,
+    "SumDiffAV2005","PercChangeAV2005","NewCondo2005" ,
+    "SumDiffAV2006","PercChangeAV2006","NewCondo2006" ,
+    "SumDiffAV2007","PercChangeAV2007","NewCondo2007" ,
+    "SumDiffAV2008","PercChangeAV2008","NewCondo2008" ,
+    "SumDiffAV2009","PercChangeAV2009","NewCondo2009" ,
+    "SumDiffAV2010","PercChangeAV2010","NewCondo2010" ,
+    "SumDiffAV2011","PercChangeAV2011","NewCondo2011" ,
+    "SumDiffAV2012","PercChangeAV2012","NewCondo2012" ,
+    "SumDiffAV2013","PercChangeAV2013","NewCondo2013" ,
+    "SumDiffAV2014","PercChangeAV2014","NewCondo2014" ,
+    "SumDiffAV2015","PercChangeAV2015","NewCondo2015" ,
+    "SumDiffAV2016","PercChangeAV2016","NewCondo2016" ,
+    "SumDiffAV2017","PercChangeAV2017","NewCondo2017" ,
+    "SumDiffAV2018","PercChangeAV2018","NewCondo2018" ,
+    "SumDiffAV2019","PercChangeAV2019","NewCondo2019" ,
+    "SumDiffAV2020","PercChangeAV2020","NewCondo2020" ,
+    "SumDiffAV2021","PercChangeAV2021","NewCondo2021" ,
+    "GrowthPercChangeAV","CrashPercChangeAV" , "RecoveryPercChangeAV" )]
+
+
+pal.BG <- pal.BG[-1,]
+# write bg csv
+write.csv(pal.BG, paste0(BARI, pal_bg_path) , row.names=F)
+
+# merge to bg shpfile
+pal.BG.shp = merge(bgsShp,pal.BG,by.x = "GEOID20",by.y="BG_ID_20",all.x=T)
+
+# write bg shpfile
+writeOGR(pal.BG.shp,paste0(BARI, pal_bg_shp_path), pal_bg_shp_name,driver="ESRI Shapefile",
+         overwrite_layer=TRUE)
+
+
+```
+

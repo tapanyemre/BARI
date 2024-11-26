@@ -1,0 +1,497 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# setwd("~/Google Drive/BARI Research Team Data Library/Permits") # project folder for building permits
+library(devtools)
+# 
+# #### Using new Geocoder via Tyler:
+# # first, need to be a member of the BARI GitHub group.
+# # second, need to create a Personal Access Token for your own GitHub account following directions here, then paste that into below "my_pat": https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line
+my_pat <- "e23a50bd95906b052b34da6a7bfa082f3fe7e54c" # should be a 40-character alphanumeric string DONE
+#devtools::install_github("BARIBoston/geobari",auth_token = my_pat,upgrade = "always")
+# library(geobari)
+# geobari::registerBARIApi(host="40.76.50.61",apiKey = "JUSTIN") # insert your name here
+library(tidyverse)
+library(rgeos)
+#changed path
+BARI <- "BARI Research Team Data Library/"
+
+source(paste0(BARI,"HG-Functions/Cleaning_functions_20190326.R"))
+source(paste0(BARI,"HG-Functions/Geocoding_functions_20190326.R"))
+source(paste0(BARI,"HG-Functions/Helper_functions_20190326.R"))
+
+#---- INPUT PATHS ----
+permits_path = "Permits/Data/buildingpermits20200616.csv" # downloaded from Boston City data portal on June 16, 2020: https://data.boston.gov/dataset/approved-building-permits
+ID_walkover_path = "Geographical Infrastructure/Boston Geographical Infrastructure 2018/Data/IDConnector.2018.csv" # from BARI dataverse
+properties_path = "Geographical Infrastructure/Boston Geographical Infrastructure 2020/Outputs/properties_geo_2020_06082020.csv" # from BARI dataverse #used to be in Data Directory #new
+
+landParcels_path = "Geographical Infrastructure/Boston Geographical Infrastructure 2020/Outputs/Parcel_final_2020_06082020.csv" # from BARI dataverse #new
+landParcelsShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2020/Outputs/BostonParcels2020_06082020" #new
+landParcelsShpName = "Parcels2020_06082020"    #new
+
+roadsCSVPath  = "Geographical Infrastructure/Boston Geographical Infrastructure 2020/Outputs/Streets/roads_fin_clust_2020_06102020.csv"          #changed from last year
+roadsShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2018/Data/BostonRoads2018"
+roadsShpName = "Roads2018"
+
+blkShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2019/Data/BostonBlocks2010"
+blkShpName = "BlocksBostonBARI"
+
+bgShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2019/Data/BostonBlockGroups2010"
+bgShpName = "BostonBlockGroups2010"
+
+ctShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2019/Data/BostonTracts2010"
+ctShpName = "BostonTracts2010"
+
+
+
+#---- OUTPUT PATHS ----
+permits2020_path <- "Permits/Data/Permits.Records.Geocoded.20200617.csv"
+
+#---- READ IN FILES ----
+permits <- read.csv(paste0(BARI,permits_path))
+roads <- read.csv(paste0(BARI,roadsCSVPath))
+roads <- read.csv("BARI Research Team Data Library/Geographical Infrastructure/Boston Geographical Infrastructure 2020/Outputs/Streets/roads_fin_clust_2020_06102020.csv")
+IDconnector <- read.csv(paste0(BARI,ID_walkover_path))
+properties <- read.csv(paste0(BARI,properties_path))
+landParcels <- read.csv(paste0(BARI,landParcels_path))
+
+
+#---- ADDING GEOGRAPHICAL DATA BASED ON ID ----
+## New process per Dan on 4/9/19:
+# (1) use new (Tyler) geocoder on 1.9% of permits with no long/lat
+# (2) any that still aren't geocoded after that can be spatially joined to parcel shapefile via the long/lat already in there
+
+
+# select permits for geocoding:
+# need_geocode <- permits %>% 
+# 	filter(is.na(property_id)) # 7777 permits
+# need_geocode$zip <- ifelse(nchar(need_geocode$zip)==4,paste0("0",need_geocode$zip),need_geocode$zip)
+# need_geocode <- need_geocode %>%
+# 	 select(permitnumber,addr)
+
+## Old method via Henry geocoder:
+# first must clean
+permits = standardizeGeoNames(permits)
+
+temp = clean_address(permits$address)
+permits$num1 = temp[,2]
+permits$num2 = temp[,3]
+permits$street_c = temp[,4]
+permits$suffix_c = temp[,5]
+rm(temp)
+permits$city_c <- clean_city(permits$city)
+permits$zip_c <- clean_zip(permits$zip)
+# temp <- str_match(permits$location,"\\(([0-9-.]*), ([0-9-.]*)\\)")        #lat long already exist
+# permits$lng <- as.numeric(temp[,3]) 
+# permits$lat <- as.numeric(temp[,2])
+# rm(temp)
+
+# 
+permits
+roads = standardizeGeoNames(roads)               #num1, num2, street_c, suffix_c already exist
+roads
+temp = clean_address(roads$FULLNAM)                    #used to be FULLNAME
+roads$num1 = temp[,2]
+roads$num2 = temp[,3]
+roads$street_c = temp[,4]
+roads$suffix_c = temp[,5]
+rm(temp)
+roads
+write.csv(roads, "BARI Research Team Data Library/Geographical Infrastructure/Boston Geographical Infrastructure 2020/Data/roads2020_cleanaddress.csv")   #need to do this?
+
+
+ # a vector an  a dataframe confused with each other, and the comma problem
+ # go to the office and use a tablet maybe?
+
+##################permits = placeInGI(df=permits,IDConnectorPath = paste0(BARI,ID_walkover_path),fuzzyMatching = F, 
+#                    landParcelsPath = paste0(BARI,landParcels_path),
+#                    landParcelsShpPath=paste0(BARI,landParcelsShpPath),landParcelsShpName = landParcelsShpName,
+#                    roadsPath = paste0(BARI,roadsCSVPath),
+#                    roadsShpPath = paste0(BARI,roadsShpPath),roadsShpName = roadsShpName, 
+#                    blkShpPath =paste0(BARI,blkShpPath),blkShpName=blkShpName,
+#                    bgShpPath=paste0(BARI,bgShpPath),bgShpName=bgShpName,
+#                    ctShpPath=paste0(BARI,ctShpPath),ctShpName=ctShpName)
+#
+
+
+
+sum(is.na(permits$X))
+sum(!is.na(permits$X))/nrow(permits)
+sum(is.na(permits$BG_ID_10))
+sum(!is.na(permits$BG_ID_10))/nrow(permits)
+sum(is.na(permits$CT_ID_10))
+sum(!is.na(permits$CT_ID_10))/nrow(permits)
+
+
+## New method via Tyler goecoder:
+# need_geocode <- need_geocode[1:100,] # for testing
+# results <- geobari::streetAddress(need_geocode$addr[1]) # for single address, returns data.frame
+
+#NO IDEA WHAT THIS IS
+# results <- map(need_geocode$addr,geobari::streetAddress) %>% bind_rows()
+# mean(!is.na(results$lat)) # only 32% able to geocode
+# 
+# # need_geocode %>% View()
+# 
+# need_geocode$long <- as.numeric(results$lng)      #changed to long
+# need_geocode$lat <- as.numeric(results$lat)
+# 
+# # merge geocoded data back to permits
+# permits <- left_join(permits,need_geocode[,c("permitnumber","addr","long","lat")],by=c("permitnumber","addr")) #changed to long
+# permits$X[is.na(permits$X)] <- permits$lat[is.na(permits$X)]
+# permits$Y[is.na(permits$Y)] <- permits$lng[is.na(permits$Y)]
+
+
+# next, match to parcels shapefiles to get parcel_id and other geographic info
+library(sf)
+# convert to sf object:
+permits_sf <- st_as_sf(na.omit(permits[,c("permitnumber","long","lat")]),coords = c("lat","long")) #####is the order correct?
+st_crs(permits_sf) <- 4326
+permits_sf <- st_transform(permits_sf, 26986) # for spatial operations
+
+# read in parcels shapefiles
+parcels <- st_read("BARI Research Team Data Library/Geographical Infrastructure/Boston Geographical Infrastructure 2020/Outputs/BostonParcels2020_06082020/Parcels2020_06082020.shp")
+# load(file = "../../Geographical Infrastructure/Boston Geographical Infrastructure 2019/Data/parcels_updatedTLID_sf.RData") # P18sf_geo object
+parcels <- st_transform(parcels, 26986) # for spatial operations
+
+# overlap permits needing geo info on parcel shapes:
+permits2 <- st_join(permits_sf,parcels,join=st_within)
+permits2 <- st_transform(permits2, 4326) # back to long/lat
+# need_geocode2 <- st_join(need_geocode_sf,P18sf_geo,join=st_within)
+permits3 <- permits2 %>%
+	as.data.frame() %>%
+	select(-geometry) %>%
+	cbind(st_coordinates(permits2))
+
+## add back to main permits dataset with all observations:
+permits$GIS_ID <- permits3$GIS_ID[match(permits$permitnumber,permits3$permitnumber)]
+permits$Land_Parcel_ID <- permits3$Ln_P_ID[match(permits$permitnumber,permits3$permitnumber)]
+
+# bring in parcel csv to add census identifiers:
+permits$TLID <- landParcels$TLID[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$Blk_ID_10 <- landParcels$Blk_ID_10[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$BG_ID_10 <- landParcels$BG_ID_10[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$CT_ID_10 <- landParcels$CT_ID_10[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$NSA_Name <- landParcels$NSA_Name[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$BRA_PD <- landParcels$BRA_PD[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+
+sum(is.na(permits$X)) # 44082
+sum(!is.na(permits$X))/nrow(permits) # 89%
+sum(is.na(permits$Land_Parcel_ID)) # 44945
+sum(is.na(permits$BG_ID_10))
+sum(!is.na(permits$BG_ID_10))/nrow(permits)
+sum(is.na(permits$CT_ID_10))
+sum(!is.na(permits$CT_ID_10))/nrow(permits)
+
+#----------------------------------------#
+# SSH - adding parcel id, X and Y
+# dataset number 1
+
+
+library(dplyr)
+
+raw2020 <- read.csv("BARI Research Team Data Library/Permits/Data/buildingpermits20200616.csv") # 409,615 rows NOW 463,761
+
+geo2019 <- read.csv("BARI Research Team Data Library/Permits/Data/Permits.Records.Geocoded.20190805.csv") # 354,682 rows NOW 419,700
+
+names(geo2019)[20] <- "Property_ID"
+
+# # excluding the records where property id and parcle id are both NA
+# 
+# sum(is.na(raw2019$property_id) & is.na(raw2019$parcel_id))
+# raw19 <- raw2019[(!is.na(raw2019$property_id) & !is.na(raw2019$parcel_id)),]
+# 
+
+# merge by property_id
+raw2020[raw2020$property_id != 0 & !is.na(raw2020$property_id),] # 396,030 rows NOW 449,035
+
+# dt_propid <- raw2019[!is.na(raw2019$property_id),] # 401,838 rows
+dt <- geo2019[,c("X","Y","Property_ID", "parcel_num","Land_Parcel_ID","TLID","Blk_ID_10","BG_ID_10","CT_ID_10","BRA_PD","NSA_Name")]
+dt <- dt[!duplicated(dt),] # 75070 rows NOW 76,781
+#dt["property_id"] <-dt["Property_ID"]
+
+#NOT SURE ABOUT THIS LEFT_JOIN
+###########dt <- left_join(raw2020[raw2020$property_id != 0 & !is.na(raw2020$property_id),], dt, by = "property_id") #710587
+dt <- dt[!duplicated(dt),]
+# some property ids weren't found
+# NA property ids
+# 0 property ids
+# two parcel number column now - combine:
+dt$parcel_id <- ifelse(is.na(dt$parcel_num), dt$parcel_num, dt$parcel_num) #filling NAs in parcel ids using last years data
+dt_propid <- dt
+dt_propid$parcel_num <- NULL
+
+# dataset number 2
+raw2020[is.na(raw2020$property_id),] # property ids == NA, 7,777 rows NOW 8,741
+
+dt <- geo2019[,c("X","Y","parcel_num","Land_Parcel_ID","TLID","Blk_ID_10","BG_ID_10","CT_ID_10","BRA_PD","NSA_Name")]
+dt <- dt[!duplicated(dt),] # 68820 rows NOW 71,899
+
+a <- raw2020[is.na(raw2020$property_id),]
+a$parcel_id <- ifelse(is.na(a$parcel_id), 0, a$parcel_id)
+names(dt)[3] <- "parcel_id"
+
+dt <- left_join(a, dt, by = "parcel_id") #11953 NOW 15,091
+# replace 0s of parcel ids back to NAs
+dt$parcel_id <- ifelse(dt$parcel_id == 0, NA, dt$parcel_id)
+
+dt_prclid <- dt
+
+raw2020[raw2020$property_id == 0,] # property ids == 0, 13,585 rows NOW 14,726
+
+dt <- geo2019[,c("X","Y","parcel_num","Land_Parcel_ID","TLID","Blk_ID_10","BG_ID_10","CT_ID_10","NSA_Name","BRA_PD")]
+dt <- dt[!duplicated(dt),] # 68820 rows NOW 71,899
+names(dt)[3] <- "parcel_id"
+
+a <- raw2020[raw2020$property_id == 0,]
+# replace 0s of parcel ids back to NAs
+a$parcel_id <- ifelse(is.na(a$parcel_id), 0, a$parcel_id)
+
+dt <- left_join(a, dt, by = "parcel_id") #13634 now 14,918
+dt$parcel_id <- ifelse(dt$parcel_id == 0, NA, dt$parcel_id)
+dt_prop0 <- dt
+
+
+dt <- bind_rows(dt_prclid, dt_prop0, dt_propid) #736174
+dt <- dt[!duplicated(dt),] #419700
+
+write.csv(dt, "buildingpermitsgeo20200617.csv")
+
+permits <- dt
+
+```
+
+```{r}
+#-------------------------------------------#
+#       Making new vars                     #
+#-------------------------------------------#
+#This syntax comes from 2014 students
+
+############### categorizing permit types ###########################
+
+permits$permittypedescr = trim(str_replace_all(permits$permittypedescr,"\xe4\xf3\xf1",""))
+
+
+NEWCON = (!is.na(permits$description) & 
+            (permits$description=="Excavation Borings Test Pits" | 
+               permits$description == "New construction" | 
+               permits$description == "Erect" | 
+               permits$description == "New construction")) | 
+  (!is.na(permits$permittypedescr) & 
+     (permits$permittypedescr=="Erect/New Construction" |
+        permits$permittypedescr == "Driveway Excavation Permit" | 
+        permits$permittypedescr == "Emergency Excavation Permit" | 
+        permits$permittypedescr == "Excavation Permit" | 
+        permits$permittypedescr == "Foundation Permit"))
+
+DEMO = (!is.na(permits$description) & 
+          (permits$description =="Demolition - Exterior" | permits$description=="Demolition - Interior")) |  
+       (!is.na(permits$permittypedescr) & 
+          permits$permittypedescr== "BFD Construction  Demo  Reno" )
+
+
+ADD = (!is.na(permits$description) & 
+         (permits$description == "Addition")) | 
+  (!is.na(permits$permittypedescr) & 
+     (permits$permittypedescr == "Amendment to a Long Form" | 
+      permits$permittypedescr == "Board of Appeals" | 
+      permits$permittypedescr == "Long Form/Alteration Permit"|
+      permits$permittypedescr== "BFD Intent To Comply"))
+
+
+
+RENO = (!is.na(permits$description) & 
+          (permits$description == "Electrical" | 
+          permits$description == "Gas" | 
+          permits$description == "Plumbing" )) |
+       (!is.na(permits$permittypedescr) & 
+          (permits$permittypedescr == "BFD  Asbestos Removal" | 
+          permits$permittypedescr == "BFD  Cutting-Burning-Welding" | 
+          permits$permittypedescr == "Electrical Permit" | 
+          permits$permittypedescr == "Gas Permit" | 
+          permits$permittypedescr == "Plumbing Permit" | 
+          permits$permittypedescr == "Short Form Bldg Permit" | 
+          permits$permittypedescr == "Use of Premises" |
+          permits$permittypedescr== "Electrical Fire Alarms" | 
+          permits$permittypedescr== "Electrical Low Voltage" | 
+          permits$permittypedescr== "Electrical Temporary Service" | 
+          permits$permittypedescr== "Fire Protection Permit" | 
+          permits$permittypedescr== "Temporary Construction Drivewa" | 
+          permits$permittypedescr== "BFD  Bag Smoke Detectors" | 
+          permits$permittypedescr== "BFD  Temporary Dumpster" | 
+          permits$permittypedescr== "BFD Chemist Certificate proces" | 
+          permits$permittypedescr== "BBFD Application Tank Removal" | 
+          permits$permittypedescr== "BFD Approval of Tank Truck" | 
+          permits$permittypedescr== "BFD Install or Modify Undergrd" | 
+          permits$permittypedescr== "BFDAlteration of Fuel Oil Burn" | 
+          permits$permittypedescr== "Sidewalk Deposit" ))
+
+#combining the two categorizations
+permits$newcon<-ifelse(NEWCON, 1,0)
+permits$demo<-ifelse(!NEWCON & DEMO, 1,0)
+permits$addition<-ifelse(!NEWCON & !DEMO & ADD, 1,0)
+permits$reno<-ifelse(!NEWCON & !DEMO & !ADD & RENO, 1,0)
+
+##“Moving” Variable
+#permits$moving<-ifelse(permits$permittypedescr== "Street Occupancy Permit" & permits$WORKTYPE== "Movetrucks" & 
+#                           !permits$demo & !permits$newcon & !permits$addition & !permits$reno & 
+#                           !is.na(permits$permittypedescr) & !is.na(permits$WORKTYPE), 1,0)
+
+##“Special Events and Change to Premises” Variable
+permits$specialevents<-ifelse(permits$permittypedescr== "BFD Special Effects/Fireworks" | permits$permittypedescr== "BFD General Permit" | permits$permittypedescr== "Public Event" | permits$permittypedescr== "BFDTemporary Place of Assembly" | permits$permittypedescr== "BFD Tent with Assembly" | permits$permittypedescr== "Use of Premises" | permits$permittypedescr== "BFD Abandon Undergrd Storage" | permits$permittypedescr== "BFD Alter Stationary Portable" |  permits$permittypedescr== "BFD Blasting Permit" |  permits$permittypedescr== "BFD Maintain Undergrd Storage" | permits$permittypedescr== "BFD Temporary Out of Services" | permits$permittypedescr== " BFD Use of Candles in a Place" | permits$permittypedescr== "Certificate of Compliance", 1,0)
+
+#owner var
+permits$owner<-toupper(trim(permits$owner))
+
+##“Upper Education” Variable
+permits$uppereducation<-ifelse(permits$owner== "ART INSTITUTE O" | permits$owner== "THE NORTHEASTER" | permits$owner== "ART INSTITUTE OF BOSTON" | permits$owner== "BARNES & NOBEL-BOSTON UNIVERSITY" | permits$owner== "BOSTON ARCHITEC" | permits$owner== "BOSTON ARCHITECT COLLEGE" | permits$owner== "BOSTON COLLEGE" | permits$owner== "BOSTON COLLEGE PURCHASING DEPT" | permits$owner== "BOSTON UNIVERSI" | permits$owner== "BOSTON UNIVERSITY TRSTS" | permits$owner== "BOSTON UNIVERSITY TRSTS OF" | permits$owner== "BOSTON UNIVRSTY TRSTS OF" | permits$owner== "BOSTON UNV PHYSICAL PLANT" | permits$owner== "EMMANUEL COLLEG" | permits$owner== "HARVARD CLUB OF" | permits$owner== "HARVARD COLL PR" | permits$owner== "HARVARD COLLEGE" | permits$owner== "HARVARD COLLEGE PRES/FELLOWS" | permits$owner== "HARVARD UNIV/FAC MAINT OPERATI" | permits$owner== "NORTHEASTERN CONFERENCE CORP" | permits$owner== "NORTHEASTERN UNIV HILLEL" | permits$owner== "NORTHEASTERN UNIV MASS" | permits$owner== "NORTHEASTERN UNIVERSITY" | permits$owner== "SUFFOLK UNIVERS" | permits$owner== "WENTWORTH INSTI" | permits$owner== "WENTWORTH INSTITUTE" | permits$owner== "WENTWORTH INSTITUTE OF" | permits$owner== "WENTWORTH INSTITUTE OF TECH" | permits$owner== "WENTWOWORTH INS" | permits$owner== "WHEELOCK COLLEG" | permits$owner== "WHEELOCK COLLEGE" | permits$owner== "MODERN SCHOOL OF FASHION" | permits$owner== "N.E. COLLEGE OF OPTOMETRY" | permits$owner== "NEW ENG CONSERV" | permits$owner== "NEW ENGLAND COLLEGE OF OPTOMETRY" | permits$owner== "SIMMONS COLLEGE" | permits$owner== "HARVARD RE SERV ATTN ACCT PAY" | permits$owner== "HARVARD REAL ES" | permits$owner== "HARVARD REAL ESTATE", 1,0)
+
+##“Healthcare” Variable
+permits$healthcare<-ifelse(permits$owner== "CHILDREN'S HOSP" | permits$owner== "N E BAPTIST HOS" | permits$owner== "B'NAI B'RITH SR CITIZENS" | permits$owner== "CHILDRENS HOSPI" | permits$owner== "CHILDRENS HOSPITAL" | permits$owner== "ASIAN HEALTH CARE FOUNDATION" | permits$owner== "BETH ISRAEL DEA" | permits$owner== "BETH ISRAEL HOSPITAL" | permits$owner== "BRIGHAM  MEDICA" | permits$owner== "BRIGHAM & WOMEN'S HOSPITAL" | permits$owner== "BRIGHAM CIRCLE" | permits$owner== "BRIGHAM CIRCLE REALTY" | permits$owner== "BRIGHAM MEDICAL" | permits$owner== "EAST BOSTON HEALTH CENTER" | permits$owner== "PARTNERS HEALTHCARE SYSTEM MGH" | permits$owner== "UNIV HOSPITAL I" | permits$owner== "UNIVERSITY HOSP" | permits$owner== "UNIVERSITY OF MASS MEDICAL CTR" | permits$owner== "BOSTONIAN NURSING CARE" | permits$owner== "DEACONESS HOSPI" | permits$owner== "NEW ENGLAND DEA" | permits$owner== "NEW ENGLAND MED CTR HOSP" | permits$owner== "RIVERSIDE NURSING HOME" | permits$owner== "SPAULDING REHAB" | permits$owner== "ST ELIZABETH'S" | permits$owner== "ST ELIZABETHS HOSP OF BOS" | permits$owner== "NEWBURY DENTAL ASSC.REALTY TR" | permits$owner== "RUGGLES ASSISTED LIVING LP" | permits$owner== "MEDICAL AREA TO" | permits$owner== "SO. COVE NURSING INC" | permits$owner== "BROOKS PHARMACY", 1,0)
+
+##“Religious Institutions” Variable
+permits$religious<-ifelse(permits$owner== "BETHEL BAPTIST" | permits$owner== "BETHEL TABERNAC" | permits$owner== "BETHEL TABERNACLE" | permits$owner== "BETHESDA HAITIAN BAPTIST CHURCH" | permits$owner== "BI DEACONESS ME" | permits$owner== "BOSTON CHINESE EVANGELICAL" | permits$owner== "CH OF THE HOLY" | permits$owner== "CHRIST APOSTOLIC MT JOY" | permits$owner== "CHRIST CHURCH I" | permits$owner== "CHRIST TABERNACLE CHURCH" | permits$owner== "CHRISTO TRUST" | permits$owner== "CHURCH CHRIST OF SCIENCE" | permits$owner== "CHURCH COURT CO" | permits$owner== "CHURCH OF SCIENTOLOGY" | permits$owner== "CHURCH OF THE C" | permits$owner== "EMMANUEL CHURCH" | permits$owner== "CONCORD BAPTIST" | permits$owner== "DORCH TEMPLE BAPTIST CHURCH" | permits$owner== "EBENEZER BAPTIS" | permits$owner== "EBENEZER BAPTIST CH" | permits$owner== "EMMANUEL GOSPEL CENTER INC" | permits$owner== "EMPIRE OF HOLY" | permits$owner== "EPIS CITY MISSION" | permits$owner== "FIRST BAPT CHUR" | permits$owner== "GLADTIDINGS PENTECOSTAL CHURCH" | permits$owner== "GREEK ORTHODOX" | permits$owner== "HOLY ORDER OF M" | permits$owner== "HOLY ORDER OF MANS" | permits$owner== "HOLY TRINITY CHURCH" | permits$owner== "J.P. TRINITY LATVEANS LUTH CH" | permits$owner== "KING'S CHAPEL HOUSE" | permits$owner== "MACEDONIA MISS BAP CHURCH" | permits$owner== "MATTAPAN CHURCH" | permits$owner== "MOUNT CALVARY HOLY CHURCH" | permits$owner== "MOUNT OLIVE TEM" | permits$owner== "N E CON 7TH DAY ADV" | permits$owner== "NEW ENGLAND BAP" | permits$owner== "OUR LADY OF GOOD VOYAGE CHAPEL" | permits$owner== "OUR LADY OF THE CEDAR CHURCH" | permits$owner== "OUR SAVIOUR'S LUTHERAN CHURCH" | permits$owner== "PARISH OF CHRIS" | permits$owner== "PARK STREET CHURCH" | permits$owner== "PRAYER ROOM PENTECOST CHURCH" | permits$owner== "PRAYER TOWER AP" | permits$owner== "PRAYER TOWER APOSTOLIC" | permits$owner== "ROMAN CATH ARCH" | permits$owner== "ROMAN CATH ARCHBISHOP" | permits$owner== "SHAWMUT COMMUNITY CHURCH" | permits$owner== "SHAWMUT CONGREG" | permits$owner== "SISTERS OF NOTR" | permits$owner== "SISTERS OF NOTRE DAME" | permits$owner== "SISTERS OF SAIN" | permits$owner== "SOC FOR ISLAMIC BROTHERHOOD IN" | permits$owner== "SONS OF DIVINE PROV INC" | permits$owner== "ST ANNE CHURCH" | permits$owner== "ST CYPRIANS CHU" | permits$owner== "ST GEORGE ORTHODOX CHURCH / BOSTON" | permits$owner== "ST LEONARD'S CHURCH" | permits$owner== "ST LUKES AND STMGRTS CHURCH" | permits$owner== "ST MONICA'S CHURCH" | permits$owner== "ST THOMAS AQUINAS CHURCH" | permits$owner== "TEMPLE BNAI MOSHE" | permits$owner== "BEREA SEVENTH DAY ADVENT" | permits$owner== "GREATER LOVE TABERNACLE" | permits$owner== "SOC JESUS OF NE" | permits$owner== "SOCIETY FOR ISL" | permits$owner== "THE CHRISTIAN ASSEM OF ROSLINDALE" | permits$owner== "UNITED PRESBYTE" | permits$owner== "MT CALVARY HOLY ASSEMBLY #1" | permits$owner== "THE MARIST FATHERS" | permits$owner== "UNIT UNIVERSALIST ASSOC" | permits$owner== "DAUGHTERS OF ST" | permits$owner== "ST JAMES ED CENTER" | permits$owner== "ST JOSEPH COMMUNITY INC" | permits$owner== "UNITARIAN UNIVE", 1,0)
+
+##“Government” Variable
+permits$government = ifelse(permits$owner == "CITY OF BOSTON" |
+                          permits$owner == "BOSTON REDEVELOPMNT AUTH" |
+                          permits$owner == "BOSTON REDEVELOPMENT AUTH" |
+                          permits$owner == "BOSTON REDEVELOPMENT" |
+                          permits$owner == "BOSTON HOUSING AUTHORITY" |
+                          permits$owner == "BOSTON HOUSING AUTH" |
+                          permits$owner == "BOSTON POLICE POST 1018 VFW" |
+                          permits$owner == "CITY OF BOSTON SCHOOL DEPT" |
+                          permits$owner == "CITY OF BOSTON PUBLIC HEALTH" |
+                          permits$owner == "CITY OF BOSTON SCHOOL DEPT" |
+                          permits$owner == "CITY OF BOSTON BY FCL" |
+                          permits$owner == "CITY OF BOSTON PUB FACIL" |
+                          permits$owner == "BOSTON REDEVLOPMENT AUTHORIT" |
+                          permits$owner == "BOSTON POLICE DETECTIVE" |
+                          permits$owner == "CITY OF BOSTON PARKS" |
+                          permits$owner == "BOSTON REDEVELOP AUTHORITY" |
+                          permits$owner == "CITY OF BOSTON PARKS AND" |
+                          permits$owner == "THE BOSTON REDEVELOPMENT" |
+                          permits$owner == "BOSTON REDEVOPMENT AUTH" |
+                          permits$owner == "BOSTON REDEVLPMNT AUTHOR" |
+                          permits$owner == "BOSTON REDEVLOPMENT AUTHOR" |
+                          permits$owner == "MBTA" |
+                          permits$owner == "BOSTON PUBLIC HEALTH COMM" |
+                          permits$owner == "CITY OF BOSTON PUBLIC HEALTH" |
+                          permits$owner == "CITY OB BOSTON PUBLIC HEALTH" |
+                          permits$owner == "PUBLIC FACILITIES COMM" |
+                          permits$owner== "BOSTON DEVELOPMENT" |
+                          permits$owner== "BOSTON FIRE DEPARTMENT" | 
+                          permits$owner== "BOSTON HOUSING" | 
+                          permits$owner== "BOSTON MUNRCIPA" | 
+                          permits$owner== "BOSTON POLICE DEPARTMENT" | 
+                          permits$owner== "BOSTON PORT * S" | 
+                          permits$owner== "BOSTON PUBLIC HEALTH COMM" | 
+                          permits$owner== "BOSTON REDEVELO" | 
+                          permits$owner== "BOSTON REDEVELOPMENT AUTH" | 
+                          permits$owner== "BOSTON REDEVELP" | 
+                          permits$owner== "CITY OF BOSTON" | 
+                          permits$owner== "CITY OF BOSTON - DND" | 
+                          permits$owner== "CITY OF BOSTON - PUB FAC " | 
+                          permits$owner== "CITY OF BOSTON (REO)" | 
+                          permits$owner== "CITY OF BOSTON BY FCL" | 
+                          permits$owner== "CITY OF BOSTON PROP MGMT DEPT" | 
+                          permits$owner== "CITY OF BOSTON-GEORGE WHITE FUND" | 
+                          permits$owner== "COMMONWLTH OF M" | 
+                          permits$owner== "COMMWLTH OF MAS" | 
+                          permits$owner== "M B T A" | 
+                          permits$owner== "MASS BAY TRANSP" | 
+                          permits$owner== "MASS BAY TRANSPORTATION AUTH" | 
+                          permits$owner== "MASS PORT AUTHO" | 
+                          permits$owner== "MASS PORT AUTHORITY" | 
+                          permits$owner== "MASS TURNPIKE A" | 
+                          permits$owner== "MASS TURNPIKE AUTHORITY" | 
+                          permits$owner== "MASSACHUSETTS BAY TRANS AUTH" | 
+                          permits$owner== "MASSACHUSETTS PORT AUTHORITY" | 
+                          permits$owner== "MASSPORT AUTHOR" | 
+                          permits$owner== "MBTA" | 
+                          permits$owner== "MSS PORT AUTHOR" | 
+                          permits$owner== "COMMMONWEALTH O" | 
+                          permits$owner== "COMMONWEALTH FL" | 
+                          permits$owner== "COMMONWEALTH OF" | 
+                          permits$owner== "UNITED STATES OF AMER" | 
+                          permits$owner== "FEDERAL HOME LOAN MORTGAGE" | 
+                          permits$owner== "FEDERAL HOME LOAN MTG CORP" | 
+                          permits$owner== "FEDERAL MORTGAGE ASSOC" | 
+                          permits$owner== "FEDERAL NATIONAL MORTGAGE ASSO" | 
+                          permits$owner== "FEDERAL NATIONAL MTG ASSOC",1,0)
+
+##“Civic” Variable
+permits$civic<-ifelse(permits$owner== "BOSTON PUBLIC LIBRARY" | permits$owner== "CHILDRENS MUSEU" | permits$owner== "CHILDRENS WORLD EDUCATIONAL" | permits$owner== "INSTITUTE OF CO" | permits$owner== "ISABELLA GARDNE" | permits$owner== "ISABELLA STEWAR" | permits$owner== "MUSEUM OF FINE" | permits$owner== "MUSEUM OF FINE ARTS" | permits$owner== "THE MUSEUM OF AFRICAN" | permits$owner== "MUSEUM OF AFRO AMER HISTORY" | permits$owner== "MUSEUM PROPERTI" | permits$owner== "R F KENNEDY GREENWAY CONSERVAN" | permits$owner== "BLACKSTONE PARK" | permits$owner== "BOSTON COMMUNITY CENTERS", 1,0)
+
+##Creating Industry Category Variable 
+permits$industrycategory<-"None"
+permits$industrycategory<-ifelse(permits$uppereducation==1, "UpperEd", permits$industrycategory)
+permits$industrycategory<-ifelse(permits$healthcare==1, "HealthCare", permits$industrycategory)
+permits$industrycategory<-ifelse(permits$religious==1, "Religious", permits$industrycategory)
+permits$industrycategory<-ifelse(permits$government==1, "Government", permits$industrycategory)
+permits$industrycategory<-ifelse(permits$civic==1, "Civic", permits$industrycategory)
+
+
+permits$"total_fees" = ifelse(!is.na(permits$"total_fees") & permits$"total_fees"<0,NA, permits$"total_fees")
+
+#lubridating ISSUED_DATE
+require(lubridate)
+#getting rid of ""
+permits$issued_date[permits$issued_date ==""]=NA
+sum(is.na(permits$issued_date))
+permits$issued_date = ymd_hms(permits$issued_date)
+sum(is.na(permits$issued_date))
+
+#lubridating EXPIRATION_DATE
+permits$expiration_date[permits$expiration_date==""|permits$expiration_date==" "]=NA
+sum(is.na(permits$expiration_date))
+permits$expiration_date = ymd_hms(permits$expiration_date)
+sum(is.na(permits$expiration_date))
+
+permits$PermitDuration = permits$expiration_date - permits$issued_date
+permits$PermitDuration[!is.na(permits$PermitDuration) & permits$PermitDuration<0]= NA
+
+permits = rename(permits,
+                   OCCUPANCY = occupancytype,
+                   NOTES = comments)
+
+
+
+varnames = c( "PermitNumber","WORKTYPE","permittypedescr","description","NOTES",
+              "APPLICANT", "DECLARED_VALUATION","total_fees",
+              "ISSUED_DATE","EXPIRATION_DATE","STATUS","owner","OCCUPANCY","sq_feet", "ADDRESS", "CITY","STATE","ZIP", "Location",
+              "Property_ID","parcel_num","X","Y","Land_Parcel_ID","TLID","Blk_ID_10","BG_ID_10","CT_ID_10","NSA_Name","BRA_PD",
+              "newcon","addition","demo","reno","specialevents","uppereducation",
+              "healthcare","religious","government","civic","industrycategory","PermitDuration")
+setdiff(names(permits),varnames)
+setdiff(varnames,names(permits))
+
+# SSH - could vary by year - fixing the column names
+names(permits)[1] <- "PermitNumber"
+names(permits)[2] <- "WORKTYPE"
+names(permits)[6] <- "APPLICANT"
+names(permits)[7] <- "DECLARED_VALUATION"
+names(permits)[9] <- "ISSUED_DATE"
+names(permits)[10] <- "EXPIRATION_DATE"
+names(permits)[11] <- "STATUS"
+names(permits)[15] <- "ADDRESS"
+names(permits)[16] <- "CITY"
+names(permits)[17] <- "STATE"
+names(permits)[18] <- "ZIP"
+names(permits)[21] <- "Location"
+names(permits)[19] <- "Property_ID"
+names(permits)[20] <- "parcel_num"
+
+permits = permits[,varnames]
+
+#save!
+write.csv(permits, paste0(BARI, permits2020_path),row.names=F)
+
+
+
+```
+
+

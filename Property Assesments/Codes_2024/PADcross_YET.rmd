@@ -1,0 +1,525 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+---
+title: "Updating PAD 2023"
+output: html_notebook
+---
+
+```{r}
+### libraries ###
+library(sf)
+library(tidyverse)
+
+### to prevent scientific notation issues ###
+options(scipen=100000000)
+
+# set the working directory to the BARI shared drive
+BARI <- "/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/"
+
+### Cleaning Functions ###
+source("~/Desktop/BARI/PA_2022/scripts /functions/Cleaning_functions_20190326.R")
+source("~/Desktop/BARI/PA_2022/scripts /functions/Geocoding_functions_20190326.R")
+source("~/Desktop/BARI/PA_2022/scripts /functions/Helper_functions_20190326.R")
+
+### INPUT PATHS ###
+
+PAraw <- read.csv("~/Desktop/BARI/PA_2022/outputs_new/PAD.Record.wUnit08162023.csv")
+bgsShp <- st_read("~/Desktop/BARI/PA_2022/base_data/Block Groups 2010 BARI/Census Block Groups.shp")
+tractsShp <- st_read("~/Desktop/BARI/PA_2022/base_data/Tracts_Boston_2010_BARI/Tracts_Boston BARI.shp")
+properties2019 <- read.csv("~/Desktop/BARI/PA_2022/base_data/Properties_geo_2022_postsanitychecks_12152022.csv")
+#???????????j <- read.csv("/Users/saina/Downloads/proptracts_effects_2021_SS (1).csv")
+
+# OUTPUT PATHS
+PArecord_final_path = "PADCross.Record.08162023.csv"
+pa_ct_path = "PADCross.CT.08162023.csv"
+pa_ctshp_path = "Tract Shp"
+pa_ctshp_name = "PADCross.CT.08162023"
+
+pa_bg_path = "PADCross.CBG.08162023.csv"
+pa_bgshp_path = "BG Shp"
+pa_bgshp_name = "PADCross.CBG.08162023"
+
+# fix IDs
+PAclean = standardizeGeoNames(PAraw)
+
+names(properties2019)[1] <- "parcel_num"
+# PAclean$parcel_num <- as.numeric(PAclean$parcel_num)
+
+#add on geo data from GI
+# properties2018 "NSA_NAME","BRA_PD" doesnt have these columns
+
+PAclean = merge(PAclean, properties2019[,c("parcel_num",c("X","Y","Land_Parcel_ID","TLID","Blk_ID_10", "BG_ID_10","CT_ID_10"))], by= "parcel_num", all.x=T) # 177483
+
+PAclean <- distinct(PAclean) # 177091 #107591 in 2023
+
+
+PAclean <- rename(PAclean, PTYPE=LUC)
+PAclean <- rename(PAclean, ST_NAME_SUFF=ST_NAME)
+#PAclean <- rename(PAclean, MAIL.CS, LUC) MAIL_CITY, MAIL_STATE
+PAclean <- rename(PAclean, AV_LAND=LAND_VALUE)
+PAclean <- rename(PAclean, AV_BLDG=BLDG_VALUE)
+PAclean <- rename(PAclean, AV_TOTAL=TOTAL_VALUE)
+PAclean <- rename(PAclean, YR_REMOD=YR_REMODEL)
+PAclean <- rename(PAclean, NUM_FLOORS=RES_FLOOR)
+PAclean <- rename(PAclean, R_ROOF_TYP=ROOF_STRUCTURE)
+PAclean <- rename(PAclean, R_EXT_FIN=ROOF_COVER)
+PAclean <- rename(PAclean, R_BDRMS=BED_RMS)
+PAclean <- rename(PAclean, R_FULL_BTH=FULL_BTH)
+PAclean <- rename(PAclean, R_HALF_BTH=HLF_BTH)
+PAclean <- rename(PAclean, R_BTH_STYLE=BTHRM_STYLE1)
+PAclean <- rename(PAclean, R_BTH_STYLE2=BTHRM_STYLE2)
+PAclean <- rename(PAclean, R_BTH_STYLE3=BTHRM_STYLE3)
+PAclean <- rename(PAclean, R_KITCH=KITCHEN_TYPE)
+PAclean <- rename(PAclean, R_KITCH_STYLE=KITCHEN_STYLE1)
+PAclean <- rename(PAclean, R_KITCH_STYLE2=KITCHEN_STYLE2)
+PAclean <- rename(PAclean, R_KITCH_STYLE3=KITCHEN_STYLE3)
+PAclean <- rename(PAclean, R_HEAT_TYP=HEAT_TYPE)
+PAclean <- rename(PAclean, R_AC=AC_TYPE)
+#PAclean <- rename(PAclean, R_FPLACE=FIRE_PLACE) does not exist 2023
+PAclean <- rename(PAclean, R_EXT_CND=EXT_COND)
+PAclean <- rename(PAclean, R_OVRALL_CND=OVERALL_COND)
+PAclean <- rename(PAclean, R_INT_CND=INT_COND)
+#PAclean <- rename(PAclean, R_INT_FIN, NA)
+PAclean <- rename(PAclean, R_VIEW=PROP_VIEW)
+PAclean <- rename(PAclean, U_TOTAL_RMS=TT_RMS)
+########################PAclean <- rename(PAclean, U_BDRMS=BED_RMS)
+########### PAclean <- rename(PAclean, U_KITCH_STYLE=KITCHEN_STYLE1)
+#PAclean <- rename(PAclean, U_HEAT_TYP=HEAT_TYPE)
+#PAclean <- rename(PAclean, U_FULL_BTH=FULL_BTH)
+#PAclean <- rename(PAclean, U_HALF_BTH=HLF_BTH)
+PAclean <- rename(PAclean, S_NUM_BLDG=NUM_BLDGS)
+PAclean <- rename(PAclean, S_BLDG_STYL=BLDG_TYPE)
+PAclean <- rename(PAclean, S_UNIT_RES=RES_UNITS)
+PAclean <- rename(PAclean, S_UNIT_COM=COM_UNITS)
+#PAclean <- rename(PAclean, S_UNIT_RC, NA)
+#PAclean <- rename(PAclean, S_EXT_FIN=EXT_FINISHED) does not exist 2023
+#PAclean <- rename(PAclean, S_EXT_CND=EXT_COND)
+#PAclean <- rename(PAclean, U_BASE_FLOOR, NA)
+PAclean <- rename(PAclean, U_NUM_PARK=NUM_PARKING)
+PAclean <- rename(PAclean, U_CORNER=CORNER_UNIT)
+#PAclean <- rename(PAclean, U_ORIENT, NA)
+#PAclean <- rename(PAclean, U_BTH_STYLE=BTHRM_STYLE1)
+#PAclean <- rename(PAclean, U_BTH_STYLE2=BTHRM_STYLE2)
+#PAclean <- rename(PAclean, U_BTH_STYLE3=BTHRM_STYLE3)
+#PAclean <- rename(PAclean, U_AC=AC_TYPE)
+PA <- PAclean
+
+PA$parcel_num <- format(PA$parcel_num, scientific = F)
+PA$GIS_ID <- format(PA$GIS_ID, scientific = F)
+PA$Blk_ID_10 <- format(PA$Blk_ID_10, scientific = F)
+PA$BG_ID_10 <- format(PA$BG_ID_10, scientific = F)
+PA$CT_ID_10 <- format(PA$CT_ID_10, scientific = F)
+PA$TLID <- format(PA$TLID, scientific = F)
+PA$Land_Parcel_ID <- format(PA$Land_Parcel_ID, scientific = F)
+
+PA$Blk_ID_10 <- trimws(PA$Blk_ID_10)
+PA$CT_ID_10 <- trimws(PA$CT_ID_10)
+PA$BG_ID_10 <- trimws(PA$BG_ID_10)
+PA$parcel_num <- trimws(PA$parcel_num)
+PA$GIS_ID <- trimws(PA$GIS_ID)
+PA$TLID <- trimws(PA$TLID)
+PA$Land_Parcel_ID <- trimws(PA$Land_Parcel_ID)
+
+PA$CT_ID_10[which(PA$CT_ID_10 == "NA")] <- NA
+PA$Blk_ID_10[which(PA$Blk_ID_10 == "NA")] <- NA
+PA$BG_ID_10[which(PA$BG_ID_10 == "NA")] <- NA
+PA$parcel_num[which(PA$parcel_num == "NA")] <- NA
+PA$GIS_ID[which(PA$GIS_ID == "NA")] <- NA
+PA$TLID[which(PA$TLID == "NA")] <- NA
+PA$Land_Parcel_ID[which(PA$Land_Parcel_ID == "NA")] <- NA
+
+#-------------------------------------------#
+#       Create new vars                     #
+#-------------------------------------------#
+
+#PA = PAclean
+# doesn't exist anymore
+# PA$LU[PA$LU == 'XX'] <- "E"
+
+## Allocating Residential Heat Type Energy Efficiency Score
+PA$HEAT_SCORE <- NA
+PA$HEAT_SCORE <- ifelse(PA$R_HEAT_TYP == 'S - Space Heat', 0, PA$HEAT_SCORE)
+PA$HEAT_SCORE <- ifelse(PA$R_HEAT_TYP == 'W - Ht Water/Steam', 1, PA$HEAT_SCORE)
+PA$HEAT_SCORE <- ifelse(PA$R_HEAT_TYP == 'P - Heat Pump', 2, PA$HEAT_SCORE)
+PA$HEAT_SCORE <- ifelse(PA$R_HEAT_TYP == 'F - Forced Hot Air', 3, PA$HEAT_SCORE)
+PA$HEAT_SCORE <- ifelse(PA$R_HEAT_TYP == 'E - Electric', 4, PA$HEAT_SCORE) 
+
+## Allocating age to Residential buildings
+### none of these are present in the data 2022 update
+PA$YR_BUILT[PA$YR_BUILT == '' | PA$YR_BUILT == 0] <- NA
+PA$YR_REMOD[PA$YR_REMOD == '' | PA$YR_REMOD == 0] <- NA
+
+PA$YR_REMOD[!is.na(PA$YR_REMOD) & PA$YR_REMOD==995]=1995 ### this happened one time only 
+
+PA$BLDG_AGE <- ifelse(is.na(PA$YR_REMOD), (2022 - PA$YR_BUILT), (2022 - PA$YR_REMOD))
+PA$BLDG_AGE[PA$BLDG_AGE <=0] <- NA
+
+##Allocating Building Age Score
+
+PA$AGE_SCORE <- NA
+PA$AGE_SCORE <- ifelse(PA$BLDG_AGE < 50,4,PA$AGE_SCORE)
+PA$AGE_SCORE <- ifelse(PA$BLDG_AGE >= 50,3,PA$AGE_SCORE)
+PA$AGE_SCORE <- ifelse(PA$BLDG_AGE >= 100,2,PA$AGE_SCORE)
+PA$AGE_SCORE <- ifelse(PA$BLDG_AGE >= 150,1,PA$AGE_SCORE)
+PA$AGE_SCORE <- ifelse(PA$BLDG_AGE >= 200,0,PA$AGE_SCORE)
+
+## Allocating Residential Air Conditioner Energy Efficiency Score
+PA$COOL_SCORE <- NA
+PA$COOL_SCORE <- ifelse(PA$R_AC == 'C - Central AC', 1, PA$COOL_SCORE)
+PA$COOL_SCORE <- ifelse(PA$R_AC == 'D - Ductless AC', 2, PA$COOL_SCORE)
+PA$COOL_SCORE <- ifelse(PA$R_AC == 'N - None', 3, PA$COOL_SCORE)
+
+## Aggregate Energy Efficiency score at building level
+PA$EE_SCORE <- PA$AGE_SCORE+0.75*PA$HEAT_SCORE+0.75*PA$COOL_SCORE
+PA = PA
+#PA[!(PA$LU =='R1'| PA$LU == 'R2'| PA$LU == 'R3'), 
+#   c("HEAT_SCORE","COOL_SCORE","EE_SCORE")]=c(NA,NA,NA)
+
+#BLDG PER SF missing: AH, CC, CL, CM, CP, RL (many E)
+#TOTAL PER SF missing: AH, CC, CL, CM, CP, RL (many E)
+#HEAT, COOL, EE missing: all but R1-3
+#AGE missing: AH, CC, CL, CP, RL (many E)
+
+PA$AV_BLDG <- as.numeric(gsub("[\\$,]", "", PA$AV_BLDG))
+PA$GROSS_AREA <- as.numeric(gsub("[\\$,]", "", PA$GROSS_AREA))
+PA$AV_LAND <- as.numeric(gsub("[\\$,]", "", PA$AV_LAND))
+PA$AV_TOTAL <- as.numeric(gsub("[\\$,]", "", PA$AV_TOTAL))
+PA$LAND_SF <- as.numeric(gsub("[\\$,]", "", PA$LAND_SF))
+
+#And "AV_BLDG_PER_SF" will give us the assessed value per square foot of a building:
+PA <- transform(PA, AV_BLDG_PER_SF = ifelse((AV_BLDG != 0 & GROSS_AREA != 0), 
+                                            AV_BLDG / GROSS_AREA, NA))
+PA <- transform(PA, AV_LAND_PER_SF =  ifelse((AV_LAND != 0 & LAND_SF != 0), 
+                                             AV_LAND / LAND_SF,NA))
+
+
+simplify_LU <- function(LU) {
+    if (LU %in% c("R1", "R2", "R3", "R4", "RL", "A")) {
+        return("RESIDENTIAL")
+    } else if (LU %in% c("CM", "CP")) {
+        return("CONDO")
+    } else if (LU == "CD") {
+        return("CONDO_UNIT")
+    } else if (LU == "RC") {
+        return("MIX_RC")
+    } else if (LU %in% c("CC", "C", "CL")) {
+        return("COMMERCIAL")
+    } else if (LU == "AH") {
+        return("AGRICULTURAL")
+    } else if (LU == "I") {
+        return("INDUSTRIAL")
+    } else if (LU == "E") {
+        return("TAX_EXEMPT")
+    } else if (LU == "EA") {
+        return("TAX_EXEMPT_BRA")
+    } else {
+        return(NA)
+    }
+}
+
+#Create a new column by applying the simplifyLU function
+PA <- transform(PA, SIMPLIFIED_LU = sapply(LU, simplify_LU))
+
+varnames = c("parcel_num","CM_ID","GIS_ID","ST_NUM" ,"ST_NAME_SUFF","UNIT_NUM",
+             "ZIP_CODE","PTYPE","LU","OWN_OCC","OWNER","OWNER.MAIL.ADDRESS","AV_LAND","AV_BLDG","AV_TOTAL","GROSS_TAX","LAND_SF",
+             "YR_BUILT","YR_REMOD","GROSS_AREA","NUM_FLOORS","STRUCTURE_CLASS",
+           "R_ROOF_TYP","R_EXT_FIN","R_BDRMS","R_FULL_BTH",
+             "R_HALF_BTH","R_BTH_STYLE","BTHRM_STYLE2","BTHRM_STYLE3","R_KITCH",
+             "R_KITCH_STYLE","R_KITCH_STYLE2","R_KITCH_STYLE3","R_HEAT_TYP","R_AC",
+             "FIREPLACES","EXT_COND","R_OVRALL_CND","R_INT_CND","R_VIEW",    
+             "S_NUM_BLDG","S_BLDG_STYL","S_UNIT_RES","S_UNIT_COM","R_EXT_FIN",
+             "U_NUM_PARK","U_CORNER","LIVING_AREA","AV_BLDG_PER_SF",
+             "AV_LAND_PER_SF", "SIMPLIFIED_LU","COOL_SCORE", "AGE_SCORE", "HEAT_SCORE", "EE_SCORE","BLDG_AGE","X","Y","CITY","LU_DESC","CD_FLOOR","INT_WALL","KITCHENS","U_TOTAL_RMS","BDRM_COND","HEAT_FUEL" ,"Land_Parcel_ID","TLID","Blk_ID_10","BG_ID_10","CT_ID_10", "unit_N", "unit_N_orig")
+
+# no "PlUMBING"
+########### Some column names have changed in 2023
+setdiff(names(PA),varnames)
+setdiff(varnames, names(PA))
+PA = PA[,varnames]
+
+names(PA)[1] <- "PID" # 177091 #107591 in 2023
+
+# names(TLID)[5] <- "GIS_ID"
+TLID <- read.csv("~/Desktop/BARI/PA_2022/base_data/Parcel_final_2022_postsanitychecks_12152022.csv") #98146 #98150 in 2023
+#TLID$TLID <- format(TLID$TLID, scientific = F)
+PA$TLID <- TLID$TLID[match(PA$Land_Parcel_ID,TLID$Land_Parcel_ID)]
+
+nrow(PA)
+summary(PA) #177091 #107591 in 2023
+# check NAs
+PA %>%  # replace to your needs
+  summarise_all(funs(sum(is.na(.))))
+
+# convert back to new column names
+PADcross <- PA
+PADcross <- rename(PADcross, LUC=PTYPE)
+PADcross <- rename(PADcross, ST_NAME = ST_NAME_SUFF)
+#PADcross <- rename(PADcross, MAIL.CS, LUC) MAIL_CITY, MAIL_STATE
+PADcross <- rename(PADcross, LAND_VALUE = AV_LAND)
+PADcross <- rename(PADcross, BLDG_VALUE=AV_BLDG)
+PADcross <- rename(PADcross, TOTAL_VALUE=AV_TOTAL)
+PADcross <- rename(PADcross, YR_REMODEL= YR_REMOD)
+PADcross <- rename(PADcross, RES_FLOOR= NUM_FLOORS)
+PADcross <- rename(PADcross, ROOF_STRUCTURE= R_ROOF_TYP)
+PADcross <- rename(PADcross, ROOF_COVER= R_EXT_FIN)
+PADcross <- rename(PADcross, BED_RMS= R_BDRMS)
+PADcross <- rename(PADcross, FULL_BTH= R_FULL_BTH)
+PADcross <- rename(PADcross, HLF_BTH= R_HALF_BTH)
+PADcross <- rename(PADcross, BTHRM_STYLE1= R_BTH_STYLE)
+PADcross <- rename(PADcross, BTHRM_STYLE2= BTHRM_STYLE2)
+PADcross <- rename(PADcross, BTHRM_STYLE3= BTHRM_STYLE3)
+PADcross <- rename(PADcross, KITCHEN_TYPE= R_KITCH)
+PADcross <- rename(PADcross, KITCHEN_STYLE1= R_KITCH_STYLE)
+PADcross <- rename(PADcross, KITCHEN_STYLE2 = R_KITCH_STYLE2)
+PADcross <- rename(PADcross, KITCHEN_STYLE3= R_KITCH_STYLE3)
+PADcross <- rename(PADcross, HEAT_TYPE= R_HEAT_TYP)
+PADcross <- rename(PADcross, AC_TYPE= R_AC)
+PADcross <- rename(PADcross, FIRE_PLACE= FIREPLACES)
+#PADcross <- rename(PADcross,EXT_COND=R_EXT_CND)
+PADcross <- rename(PADcross, OVERALL_COND= R_OVRALL_CND)
+PADcross <- rename(PADcross, INT_COND= R_INT_CND)
+#PADcross <- rename(PADcross, R_INT_FIN, NA)
+PADcross <- rename(PADcross, PROP_VIEW= R_VIEW)
+PADcross <- rename(PADcross, TT_RMS= U_TOTAL_RMS)
+PADcross <- rename(PADcross, NUM_BLDGS =S_NUM_BLDG)
+PADcross <- rename(PADcross, BLDG_TYPE= S_BLDG_STYL)
+PADcross <- rename(PADcross, RES_UNITS =S_UNIT_RES)
+PADcross <- rename(PADcross, COM_UNITS= S_UNIT_COM)
+PADcross <- rename(PADcross, EXT_FINISHED= R_EXT_FIN.1)
+PADcross <- rename(PADcross, NUM_PARKING= U_NUM_PARK)
+PADcross <- rename(PADcross, CORNER_UNIT =U_CORNER)
+
+oldpad <- read.csv("~/Desktop/BARI/PA_2022/base_data/PADCross.Record.07132022.csv")
+setdiff(names(oldpad), names(PADcross))
+setdiff(names(PADcross), names(oldpad))
+
+
+#write.csv(PA,paste0(BARI,PArecord_final_path),row.names=F)
+write.csv(PADcross,"~/Desktop/BARI/PA_2022/outputs_new/PADCross.Record.DRFT1.08162023.csv",row.names=F)
+
+#### AGGREGATE ####
+
+# PA <- read.csv("D:/Google Drive/BARI Research Team Data Library/Property Assessment Data/Outputs/PADCross.Record.082020.csv")
+#????crossCT <- read.csv("/Users/saina/Downloads/PADCross.CT.062022.csv")
+#????crossCBG <- read.csv("/Users/saina/Downloads/PADCross.CBG.062022.csv")
+PA_PA <- read.csv("~/Desktop/BARI/PA_2022/outputs_new/PADCross.Record.DRFT1.08162023.csv")
+PA <- PA_PA
+PA = PA
+#PA <- PADcross
+#HEAT, COOL, EE missing: all but R1-3
+#BLDG/LAND PER SF missing: AH, CC, CL, CM, CP, RL (many E)
+#AGE missing: AH, CC, CL, CP, RL (many E)
+
+#HEAT/COOL - only R1-3 (but syntax is in same form as below so everything is clear)
+ee_res = PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3"
+PA$EE_SCORE.res[ee_res]=PA$EE_SCORE[ee_res] #this is null??? 2023
+
+PA_bckup <- PA
+#PA <- PA_bckup
+
+# deal with outliers
+summary(PA$AV_BLDG_PER_SF)
+summary(PA$AV_LAND_PER_SF)
+summary(PA$AV_BLDG_PER_SF.nonres) #0
+summary(PA$AV_BLDG_PER_SF.res) #0
+summary(PA$AV_LAND_PER_SF.nonres) #0
+summary(PA$AV_LAND_PER_SF.res) #0
+summary(PA$AV_BLDG)
+
+# let's go with dropping the top .4 percent
+PA <- PA[PA$AV_BLDG_PER_SF < quantile(PA$AV_BLDG_PER_SF, 0.996, na.rm = T),]
+```
+
+
+```{r}
+#VALUATIONS PER SF - separate for residential and non-res, for land usages which values 
+#   consistently exist
+#valuation_res = (PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" 
+ #                | PA$LU == "A" | PA$LU == "CD")
+
+#PA$AV_LAND_PER_SF.res[valuation_res] = PA$AV_LAND_PER_SF[valuation_res]
+#PA$AV_BLDG_PER_SF.res[valuation_res] =  PA$AV_BLDG_PER_SF[ valuation_res]
+
+
+# new way
+PA$AV_LAND_PER_SF.res <- ifelse((PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" | PA$LU == "A" | PA$LU == "CD"), PA$AV_LAND_PER_SF, NA)
+PA$AV_BLDG_PER_SF.res <- ifelse((PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" | PA$LU == "A" | PA$LU == "CD"), PA$AV_BLDG_PER_SF, NA)
+
+
+#valuation_nonres = (PA$LU == "C" | PA$LU == "E" | PA$LU == "EA" | PA$LU == "I" 
+     #               | PA$LU == "RC" )
+
+#PA$AV_LAND_PER_SF.nonres[valuation_nonres] = PA$AV_LAND_PER_SF[valuation_nonres]
+#PA$AV_BLDG_PER_SF.nonres[valuation_nonres] =  PA$AV_BLDG_PER_SF[ valuation_nonres]
+
+PA$AV_LAND_PER_SF.nonres <- ifelse((PA$LU == "C" | PA$LU == "E" | PA$LU == "EA" | PA$LU == "I" 
+                    | PA$LU == "RC" ), PA$AV_LAND_PER_SF, NA)
+PA$AV_BLDG_PER_SF.nonres <- ifelse((PA$LU == "C" | PA$LU == "E" | PA$LU == "EA" | PA$LU == "I" 
+                   | PA$LU == "RC" ), PA$AV_BLDG_PER_SF, NA)
+
+#AGE  - separate for residential and non-res, for land usages which values consistently 
+#   exist
+PA$YR_BUILT_REMOD = ifelse(is.na(PA$YR_REMOD),PA$YR_BUILT,PA$YR_REMOD)
+PA$DEC_BUILT_REMOD = floor(PA$YR_BUILT_REMOD/10)*10
+
+#age_res = (PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" | PA$LU == "A" 
+ #          | PA$LU == "CD" | PA$LU == "CM")
+
+age_res = (PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" | PA$LU == "A" 
+           | PA$LU == "CD")
+
+PA$YR_BUILT_REMOD.res <- ifelse((PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" | PA$LU == "A" 
+           | PA$LU == "CD"), PA$YR_BUILT_REMOD, NA)
+
+PA$DEC_BUILT_REMOD.res <- ifelse((PA$LU == "R1" | PA$LU == "R2" | PA$LU == "R3" | PA$LU == "R4" | PA$LU == "A" 
+           | PA$LU == "CD"), PA$DEC_BUILT_REMOD, NA)
+
+#PA$YR_BUILT_REMOD.res[age_res] = PA$YR_BUILT_REMOD[age_res]
+#PA$DEC_BUILT_REMOD.res[age_res] = PA$DEC_BUILT_REMOD[age_res]
+
+age_nonres = (PA$LU == "C" | PA$LU == "E" | PA$LU == "EA" | PA$LU == "I" | PA$LU == "RC" )
+
+PA$YR_BUILT_REMOD.nonres <- ifelse((PA$LU == "C" | PA$LU == "E" | PA$LU == "EA" | PA$LU == "I" | PA$LU == "RC" ), PA$YR_BUILT_REMOD, NA)
+
+PA$DEC_BUILT_REMOD.nonres <- ifelse((PA$LU == "C" | PA$LU == "E" | PA$LU == "EA" | PA$LU == "I" | PA$LU == "RC" ), PA$DEC_BUILT_REMOD, NA)
+
+
+#PA$YR_BUILT_REMOD.nonres[age_nonres] = PA$YR_BUILT_REMOD[age_nonres]
+#PA$DEC_BUILT_REMOD.nonres[age_nonres] = PA$DEC_BUILT_REMOD[age_nonres]
+
+# handling NAs - NOPE DONT DO THIS
+#PA$EE_SCORE.res <- ifelse(is.na(PA$EE_SCORE.res), 0 , PA$EE_SCORE.res)
+#PA$AV_LAND_PER_SF.res <- ifelse(is.na(PA$AV_LAND_PER_SF.res), 0, PA$AV_LAND_PER_SF.res)
+#PA$AV_BLDG_PER_SF.res <- ifelse(is.na(PA$AV_BLDG_PER_SF.res), 0, PA$AV_BLDG_PER_SF.res)
+#PA$AV_LAND_PER_SF.nonres <- ifelse(is.na(PA$AV_LAND_PER_SF.nonres), 0, PA$AV_LAND_PER_SF.nonres)
+#PA$AV_BLDG_PER_SF.nonres <- ifelse(is.na(PA$AV_BLDG_PER_SF.nonres), 0, PA$AV_BLDG_PER_SF.nonres)
+#PA$YR_BUILT_REMOD.res <- ifelse(is.na(PA$YR_BUILT_REMOD.res), 0, PA$YR_BUILT_REMOD.res)
+
+# PA$DEC_BUILT_REMOD.res <- ifelse(is.na(PA$DEC_BUILT_REMOD.res), 0, PA$DEC_BUILT_REMOD.res)
+# PA$DEC_BUILT_REMOD.nonres <- ifelse(is.na(PA$DEC_BUILT_REMOD.nonres), 0, PA$DEC_BUILT_REMOD.nonres)
+
+# aggregate by census tract
+PA.agg.CT.mean = aggregate(cbind(YR_BUILT_REMOD.res,YR_BUILT_REMOD.nonres)~CT_ID_10,
+                           data=PA,FUN=mean,na.action=na.pass, na.rm=T)
+
+PA.agg.CT.median = aggregate(cbind(#EE_SCORE.res, 
+                                 AV_LAND_PER_SF.res,AV_LAND_PER_SF.nonres,
+                                 AV_BLDG_PER_SF.res,AV_BLDG_PER_SF.nonres)~CT_ID_10,
+                           data=PA,FUN=median,na.action=na.pass, na.rm=T)
+
+PA.agg.CT.mode = aggregate(cbind(DEC_BUILT_REMOD.res,DEC_BUILT_REMOD.nonres)~CT_ID_10,
+                           data=PA,FUN = Mode,na.action=na.pass)
+
+PA.agg.CT.mean = merge(PA.agg.CT.median,PA.agg.CT.mean,by="CT_ID_10",all=T)
+PA.agg.CT = merge(PA.agg.CT.mean,PA.agg.CT.mode,by="CT_ID_10",all=T)
+
+tract.unique <- read.csv("/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/proptracts_effects_06202022.csv")
+
+#PA.agg.CT <- read.csv("/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/PADCross.CT.06202022.csv")
+#PA.agg.CT <- PA.agg.CT[,-11]
+
+tract.unique$CT_ID_10 <-as.numeric(tract.unique$CT_ID_10)
+PA.agg.CT <- left_join(PA.agg.CT, tract.unique[,c("CT_ID_10", "random")], by = "CT_ID_10")
+
+names(PA.agg.CT)[11] <- "nbhdval"
+
+PA.agg.CT %>%  # 
+  summarise_all(funs(sum(is.na(.))))
+
+# special function - the three lines need to be ran all together
+is.nan.data.frame <- function(x)
+  do.call(cbind, lapply(x, is.nan))
+PA.agg.CT[is.nan(PA.agg.CT)] <- NA
+
+# drop the first row - NA for CT
+#PA.agg.CT <- PA.agg.CT[-1,]
+# write census tract aggregation
+write.csv(PA.agg.CT, paste0(BARI, pa_ct_path),row.names=F)
+
+#write.csv(PA.agg.CT, "/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/PADCross.07032022.csv", row.names = F)
+
+#write.csv(PA.agg.CT, "/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/PADCross.NoJustin.CT.06202022.csv", row.names = F)
+
+# PA.agg.CT <- read.csv(paste0(BARI, "Property Assessment Data/Data/PADCross.CT.190626.csv"))
+
+# PA.agg.CT$TLID <- TLID$TLID[match(PA.agg.CT$GIS_ID,TLID$GIS_ID)]
+
+# write.csv(PA.agg.CT,paste0(BARI, pa_ct_path) ,row.names=F)
+
+# rename the tract aggregates so the names are short enough for the shape file
+PA.agg.CT.rename = rename(PA.agg.CT,EESR = EE_SCORE.res, ALPSFR = AV_LAND_PER_SF.res, 
+                          ALPSFN = AV_LAND_PER_SF.nonres,ABPSFR = AV_BLDG_PER_SF.res, 
+                          ABPSFN = AV_BLDG_PER_SF.nonres, YBRR = YR_BUILT_REMOD.res, 
+                          YBRN = YR_BUILT_REMOD.nonres, DBRR = DEC_BUILT_REMOD.res, 
+                          DBRN = DEC_BUILT_REMOD.nonres, nbhdval = nbhdval)
+
+# merge to tract shapefile 
+#names(tractsShp)[4] <- "CT_ID_10"
+PA.agg.CT.shp = merge(tractsShp, PA.agg.CT.rename, by="CT_ID_10",all.x=T, duplicateGeoms = TRUE)
+
+PA.agg.CT.shp %>%  # 
+  summarise_all(funs(sum(is.na(.))))
+
+st_write(PA.agg.CT.shp, paste0(BARI, pa_ctshp_path), pa_ctshp_name, driver="ESRI Shapefile", 
+         overwrite_layer = T)
+
+# writeOGR(PA.agg.CT.shp, paste0(BARI, pa_ctshp_path), pa_ctshp_name, driver="ESRI Shapefile", 
+ #        overwrite_layer = T)
+# aggregate be census block group
+
+PA.agg.CBG.mean = aggregate(cbind(YR_BUILT_REMOD.res,YR_BUILT_REMOD.nonres)~BG_ID_10,
+                            data=PA,FUN=mean,na.action=na.pass, na.rm=T)
+
+PA.agg.CBG.median = aggregate(cbind(EE_SCORE.res, AV_LAND_PER_SF.res,AV_LAND_PER_SF.nonres,
+                                  AV_BLDG_PER_SF.res,AV_BLDG_PER_SF.nonres)~BG_ID_10,
+                            data=PA,FUN=median,na.action=na.pass, na.rm=T)
+
+PA.agg.CBG.mode = aggregate(cbind(DEC_BUILT_REMOD.res,DEC_BUILT_REMOD.nonres)~BG_ID_10,
+                            data=PA,FUN=Mode,na.action=na.pass)
+
+PA.agg.CBG.mean = merge(PA.agg.CBG.median,PA.agg.CBG.mean,by="BG_ID_10",all=T)
+PA.agg.CBG = merge(PA.agg.CBG.mean,PA.agg.CBG.mode,by="BG_ID_10",all=T) #559
+
+PA.agg.CBG %>%  # replace to your needs
+  summarise_all(funs(sum(is.na(.))))
+
+# special function - the three lines need to be ran all together
+is.nan.data.frame <- function(x)
+  do.call(cbind, lapply(x, is.nan))
+PA.agg.CBG[is.nan(PA.agg.CBG)] <- NA
+
+# drop the first row - NA for CT
+#PA.agg.CBG <- PA.agg.CBG[-1,]
+
+# write cbg file
+write.csv(PA.agg.CBG,paste0(BARI, pa_bg_path),row.names=F)
+
+write.csv(PA.agg.CBG, "/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/PADCross.CBG.06142022.csv", row.names = F)
+
+# PA.agg.CBG <- read.csv(paste0(BARI, "Property Assessment Data/Data/PADCross.CBG.190527.csv"))
+# 
+# PA.agg.CT$TLID <- TLID$TLID[match(PA.agg.CT$GIS_ID,TLID$GIS_ID)]
+
+# rename so that variable names are not cut off in shape file
+PA.agg.CBG.rename = rename(PA.agg.CBG,EESR = EE_SCORE.res, ALPSFR = AV_LAND_PER_SF.res, 
+                           ALPSFN = AV_LAND_PER_SF.nonres, ABPSFR = AV_BLDG_PER_SF.res, 
+                           ABPSFN = AV_BLDG_PER_SF.nonres, YBRR = YR_BUILT_REMOD.res, 
+                           YBRN = YR_BUILT_REMOD.nonres, DBRR = DEC_BUILT_REMOD.res, 
+                           DBRN = DEC_BUILT_REMOD.nonres)
+    
+PA.agg.CBG.shp = merge(bgsShp, PA.agg.CBG.rename, by="BG_ID_10",all.x=T)
+
+# write cbg shapefile
+st_write(PA.agg.CBG.shp, paste0(BARI, pa_bgshp_path), pa_bgshp_name, driver="ESRI Shapefile", 
+         overwrite_layer = T)
+#PADCross.CBG <- read.csv("/Users/Shared/Files From d.localized/School/Semester 6/BARI PAD update/PAD/PADCross.CBG.06142022.csv")
+
+# writeOGR(PA.agg.CBG.shp,paste0(BARI, pa_bgshp_path),pa_bgshp_name,driver="ESRI Shapefile",
+  #       overwrite_layer=TRUE)
+```
+
+
+

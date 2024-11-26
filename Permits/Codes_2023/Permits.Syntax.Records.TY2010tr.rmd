@@ -1,0 +1,416 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+options(scipen=100000000)
+# libraries
+library(tidyverse)
+library(glue)
+library(sf)
+
+# set path
+BARI <- "C:/Users/Toshiaki/Desktop/BARI/"
+
+# # loading in functions
+source(paste0(BARI,"/HG Functions/Cleaning_functions_20190326.R"))
+source(paste0(BARI,"/HG Functions/Geocoding_functions_20190326.R"))
+source(paste0(BARI,"/HG Functions/Helper_functions_20190326.R"))
+
+
+
+
+#---- INPUT PATHS ----
+permits_path = "Permits/Data/6ddcd912-32a0-43df-9908-63574f8c7e77.csv" # downloaded from Boston City data portal: https://data.boston.gov/dataset/approved-building-permits
+ID_walkover_path = "Boston Geographical Infrastructure 2022/Data/IDConnector2020.csv" # from BARI dataverse
+properties_path = "Boston Geographical Infrastructure 2022/Data/Properties_geo_2022_postsanitychecks_12152022.csv" # from BARI dataverse
+
+landParcels_path = "Boston Geographical Infrastructure 2022/Data/Parcel_final_2022_postsanitychecks_12152022.csv" # from BARI dataverse
+landParcelsShpPath = "Boston Geographical Infrastructure 2010/Data/BostonParcels2019"
+landParcelsShpName = "Parcels2019_10282019"
+
+roadsCSVPath  = "Boston Geographical Infrastructure 2022/Data/BostonRoads2021/roads_fin_clust_2022_12132022.csv"
+roadsShpPath = "Boston Geographical Infrastructure 2010/Data/BostonRoads2018"
+roadsShpName = "Roads2018"
+
+blkShpPath = "Boston Geographical Infrastructure 2010/Data/BostonBlocks2010"
+blkShpName = "BlocksBostonBARI"
+
+bgShpPath = "Geographical Infrastructure/Boston Geographical Infrastructure 2010/Data/BostonBlockGroups2010"
+bgShpName = "BostonBlockGroups2010"
+
+ctShpPath = "Boston Geographical Infrastructure 2010/Data/BostonTracts2010"
+ctShpName = "BostonTracts2010"
+
+#---- OUTPUT PATHS ----
+permits2022_path <- "Permits/Outputs/Permits.Records.Geocoded.TY.012023.2010.csv"
+
+#---- READ IN FILES ----
+permits <- read.csv(paste0(BARI,permits_path)) # already has "lat" "long" 
+IDconnector <- read.csv(paste0(BARI,ID_walkover_path))
+properties <- read.csv(paste0(BARI,properties_path))
+landParcels <- read.csv(paste0(BARI,landParcels_path))
+#------------------------------- ADDING GEOGRAPHICAL DATA BASED ON ID ----------------------------#
+
+## Old method via Henry geocoder:
+# first must clean
+permits = standardizeGeoNames(permits)
+
+temp = clean_address(permits$address)
+permits$num1 = temp[,2]
+permits$num2 = temp[,3]
+permits$street_c = temp[,4]
+permits$suffix_c = temp[,5]
+rm(temp)
+permits$city_c <- clean_city(permits$city)
+permits$zip_c <- clean_zip(permits$zip)
+
+Permits_orig <- permits #28, 573569
+# permits <- Permits_orig
+
+
+########## taking care of geographical identifiers ##############
+
+# how many NA values do we have for lat/lon
+sum(is.na(permits$long)) #63641
+sum(!is.na(permits$long))/nrow(permits) # 0.89 has lat/lon info
+
+# no geo-coding for now
+
+# next, match to parcels shape files to get parcel_id and other geographic info
+# convert to sf object:
+permits_sf <- st_as_sf(na.omit(permits[,c("permitnumber","long","lat")]),coords = c("long","lat"))
+st_crs(permits_sf) <- 4326
+permits_sf <- st_transform(permits_sf, 26986) # for spatial operations, #483580
+
+# read in parcels shape files
+parcels <- st_read("Boston Geographical Infrastructure 2022/Data/LandParcels2021/LandParcels2021.shp") #98857
+parcels <- st_transform(parcels, 26986) # for spatial operations
+
+# overlap permits needing geo info on parcel shapes:
+permits2 <- st_join(permits_sf,parcels,join=st_within)
+permits2 <- st_transform(permits2, 4326) # back to long/lat
+
+permits3 <- permits2 %>%
+	as.data.frame() %>%
+	dplyr::select(-geometry) %>%
+	cbind(st_coordinates(permits2))
+
+## add back to main permits dataset with all observations:
+permits$GIS_ID <- permits3$GIS_ID[match(permits$permitnumber,permits3$permitnumber)]
+permits$Land_Parcel_ID <- permits3$Ln_P_ID[match(permits$permitnumber,permits3$permitnumber)]
+
+# bring in parcel csv to add census identifiers:
+landParcels$Land_Parcel_ID <- as.numeric(landParcels$Land_Parcel_ID) #98150
+
+landParcels$CT_ID_10 <- format(landParcels$CT_ID_10, scientific = F)
+landParcels$Blk_ID_10 <- format(landParcels$Blk_ID_10, scientific = F)
+landParcels$BG_ID_10 <- format(landParcels$BG_ID_10, scientific = F)
+
+permits$TLID <- landParcels$TLID[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$Blk_ID_10 <- landParcels$Blk_ID_10[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$BG_ID_10 <- landParcels$BG_ID_10[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$CT_ID_10 <- landParcels$CT_ID_10[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$NSA_Name <- landParcels$NSA_Name[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+permits$BRA_PD <- landParcels$BRA_PD[match(permits$Land_Parcel_ID,landParcels$Land_Parcel_ID)]
+
+sum(is.na(permits$long)) # 63641
+sum(!is.na(permits$long))/nrow(permits) # 88.9%
+sum(is.na(permits$Land_Parcel_ID)) # 65276
+sum(is.na(permits$BG_ID_10)) # 65276
+sum(!is.na(permits$BG_ID_10))/nrow(permits)# 88.6%
+sum(is.na(permits$CT_ID_10)) # 65276
+sum(!is.na(permits$CT_ID_10))/nrow(permits)# 88.6%
+
+#----------------------------------------#
+# geo enrichment
+# SSH - adding parcel id, X and Y using last year's data to fill in the NAs
+# dataset number 1
+
+geo2022 <- read.csv("Permits/Outputs/Permits.Records.Geocoded.SSH.08022022.csv") # 550065 rows, last year's data
+
+geo2022$CT_ID_10 <- format(geo2022$CT_ID_10, scientific = F)
+geo2022$Blk_ID_10 <- format(geo2022$Blk_ID_10, scientific = F)
+geo2022$BG_ID_10 <- format(geo2022$BG_ID_10, scientific = F)
+
+permits_full <- permits[!is.na(permits$Land_Parcel_ID),]
+permits_wpropID <- permits[is.na(permits$Land_Parcel_ID) & permits$Property_ID != 0 & !is.na(permits$Property_ID),]
+permits_0probID <- permits[is.na(permits$Land_Parcel_ID) & (permits$Property_ID == 0 | is.na(permits$Property_ID)),]
+# permits_0probID_NA <- permits[is.na(permits$Land_Parcel_ID) & permits$Property_ID == 0 &
+                             # is.na(permits$Property_ID),]
+# filling NAs - permits_wpropID
+permits_wpropID$Land_Parcel_ID <- geo2022$Land_Parcel_ID[match(permits_wpropID$Property_ID, 
+                                                               geo2022$Property_ID)]
+permits_wpropID$TLID <- geo2022$TLID[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$Blk_ID_10 <- geo2022$Blk_ID_10[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$BG_ID_10 <- geo2022$BG_ID_10[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$CT_ID_10 <- geo2022$CT_ID_10[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$NSA_Name <- geo2022$NSA_Name[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$BRA_PD <- geo2022$BRA_PD[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$lat <- geo2022$Y[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+permits_wpropID$long <- geo2022$X[match(permits_wpropID$Property_ID, geo2022$Property_ID)]
+
+# filling NAs - permits_wpropID
+permits_0probID[!is.na(permits_0probID$parcel_id),]$Land_Parcel_ID <- geo2022$Land_Parcel_ID[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+permits_0probID[!is.na(permits_0probID$parcel_id),]$TLID <- geo2022$TLID[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+permits_0probID[!is.na(permits_0probID$parcel_id),]$Blk_ID_10 <- geo2022$Blk_ID_10[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+permits_0probID[!is.na(permits_0probID$parcel_id),]$CT_ID_10 <- geo2022$CT_ID_10[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+permits_0probID[!is.na(permits_0probID$parcel_id),]$BG_ID_10 <- geo2022$BG_ID_10[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+permits_0probID[!is.na(permits_0probID$parcel_id),]$NSA_Name <- geo2022$NSA_Name[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+permits_0probID[!is.na(permits_0probID$parcel_id),]$BRA_PD <- geo2022$BRA_PD[match(permits_0probID[!is.na(permits_0probID$parcel_id),]$parcel_id, geo2022[!is.na(geo2022$parcel_num),]$parcel_num)]
+
+#integer64 to numeric
+# permits_0probID$Blk_ID_10 <- as.numeric(permits_0probID$Blk_ID_10)
+# permits_0probID$Blk_ID_10 <- format(permits_0probID$Blk_ID_10, scientific = FALSE)
+# permits_full$Blk_ID_10 <- as.numeric(permits_full$Blk_ID_10)
+
+dt <- bind_rows(permits_0probID, permits_full, permits_wpropID) #36, 573569
+
+dt$BG_ID_10 <- as.numeric(dt$BG_ID_10)
+dt$CT_ID_10 <- as.numeric(dt$CT_ID_10)
+dt$Blk_ID_10 <- as.numeric(dt$Blk_ID_10)
+
+# filling NAs
+pad <- read.csv("Boston Geographical Infrastructure 2022/Data/PADCross.Record.07132022.csv")
+# property assessment data
+parcel2020 <- read.csv("Boston Geographical Infrastructure 2022/Data/Parcel_final_2022_postsanitychecks_12152022.csv") # parcel data 2022
+
+dt$Land_Parcel_ID <- ifelse(is.na(dt$Land_Parcel_ID) & !is.na(dt$GIS_ID), dt$GIS_ID, dt$Land_Parcel_ID)
+#parcel2020
+dt$CT_ID_10[is.na(dt$CT_ID_10) & !is.na(dt$Land_Parcel_ID)] <- parcel2020$CT_ID_10[match(dt$Land_Parcel_ID[is.na(dt$CT_ID_10) & !is.na(dt$Land_Parcel_ID)], parcel2020$Land_Parcel_ID)]
+
+dt$BG_ID_10[is.na(dt$BG_ID_10) & !is.na(dt$Land_Parcel_ID)] <- parcel2020$BG_ID_10[match(dt$Land_Parcel_ID[is.na(dt$BG_ID_10) & !is.na(dt$Land_Parcel_ID)], parcel2020$Land_Parcel_ID)]
+
+dt$Blk_ID_10[is.na(dt$Blk_ID_10) & !is.na(dt$Land_Parcel_ID)] <- parcel2020$Blk_ID_10[match(dt$Land_Parcel_ID[is.na(dt$Blk_ID_10) & !is.na(dt$Land_Parcel_ID)], parcel2020$Land_Parcel_ID)]
+
+dt$Blk_ID_10[is.na(dt$Blk_ID_10) & !is.na(dt$Land_Parcel_ID)] <- parcel2020$Blk_ID_10[match(dt$Land_Parcel_ID[is.na(dt$Blk_ID_10) & !is.na(dt$Land_Parcel_ID)], parcel2020$Land_Parcel_ID)]
+#pad
+dt$BG_ID_10[is.na(dt$BG_ID_10) & !is.na(dt$CT_ID_10) & !is.na(dt$Land_Parcel_ID)] <- pad$BG_ID_10[match(dt$Land_Parcel_ID[is.na(dt$BG_ID_10) & !is.na(dt$CT_ID_10) & !is.na(dt$Land_Parcel_ID)], pad$Land_Parcel_ID)]
+#geo2022
+parcel_num_NArec <- dt$parcel_num[is.na(dt$Land_Parcel_ID)]
+parcel_num_NArec <- parcel_num_NArec[!is.na(parcel_num_NArec)]
+parcel_num_NArec <- geo2022[geo2022$parcel_num %in% parcel_num_NArec,] # using BP from last year
+parcel_num_NArec$CT_ID_10 <- as.numeric(parcel_num_NArec$CT_ID_10)
+parcel_num_NArec$BG_ID_10 <- as.numeric(parcel_num_NArec$BG_ID_10)
+parcel_num_NArec$Blk_ID_10 <- as.numeric(parcel_num_NArec$Blk_ID_10)
+parcel_num_NArec <- parcel_num_NArec[!is.na(parcel_num_NArec$Land_Parcel_ID),] #42192
+
+dt$parcel_num <- as.numeric(dt$parcel_num)
+
+cover <- dt[is.na(dt$CT_ID_10),] #19656
+dt$CT_ID_10[is.na(dt$CT_ID_10)] <- parcel_num_NArec$CT_ID_10[match(dt$parcel_num[is.na(dt$CT_ID_10)], parcel_num_NArec$parcel_num)]
+
+dt$BG_ID_10[is.na(dt$BG_ID_10)] <- parcel_num_NArec$BG_ID_10[match(dt$parcel_num[is.na(dt$BG_ID_10)], parcel_num_NArec$parcel_num)]
+
+dt$Blk_ID_10[is.na(dt$Blk_ID_10)] <- parcel_num_NArec$Blk_ID_10[match(dt$parcel_num[is.na(dt$Blk_ID_10)], parcel_num_NArec$parcel_num)]
+
+dt$Land_Parcel_ID[is.na(dt$Land_Parcel_ID)] <- parcel_num_NArec$Land_Parcel_ID[match(dt$parcel_num[is.na(dt$Land_Parcel_ID)], parcel_num_NArec$parcel_num)]
+
+dt$lat[is.na(dt$lat)] <- parcel_num_NArec$Y[match(dt$parcel_num[is.na(dt$lat)], parcel_num_NArec$parcel_num)]
+dt$long[is.na(dt$long)] <- parcel_num_NArec$X[match(dt$parcel_num[is.na(dt$long)], parcel_num_NArec$parcel_num)]
+
+TLID <- read.csv("Boston Geographical Infrastructure 2022/Data/Parcels_updatedTLID_postsanitycheck_12152022.csv")
+cover_tlid_ct <- TLID[!is.na(TLID$CT_ID_10),]
+
+dt$CT_ID_10[is.na(dt$CT_ID_10) & !is.na(dt$TLID)] <- 
+  cover_tlid_ct$CT_ID_10[match(dt$TLID[is.na(dt$CT_ID_10) & !is.na(dt$TLID)], cover_tlid_ct$TLID)]
+
+dt$BG_ID_10[is.na(dt$BG_ID_10) & !is.na(dt$TLID)] <- 
+  cover_tlid_ct$BG_ID_10[match(dt$TLID[is.na(dt$BG_ID_10) & !is.na(dt$TLID)], cover_tlid_ct$TLID)]
+
+dt$Blk_ID_10[is.na(dt$Blk_ID_10) & !is.na(dt$TLID)] <- 
+  cover_tlid_ct$Blk_ID_10[match(dt$TLID[is.na(dt$Blk_ID_10) & !is.na(dt$TLID)], cover_tlid_ct$TLID)]
+
+# parcel 2022
+dt$TLID[is.na(dt$TLID) & !is.na(dt$Land_Parcel_ID)] <- 
+  landParcels$TLID[!is.na(landParcels$Land_Parcel_ID)][match(dt$Land_Parcel_ID[is.na(dt$TLID) & !is.na(dt$Land_Parcel_ID)], landParcels$Land_Parcel_ID[!is.na(landParcels$Land_Parcel_ID)])]
+
+dt$NSA_Name[is.na(dt$NSA_Name) & !is.na(dt$Land_Parcel_ID)] <- 
+  landParcels$NSA_Name[!is.na(landParcels$Land_Parcel_ID)][match(dt$Land_Parcel_ID[is.na(dt$NSA_Name) & !is.na(dt$Land_Parcel_ID)], landParcels$Land_Parcel_ID[!is.na(landParcels$Land_Parcel_ID)])]
+
+dt$BRA_PD[is.na(dt$BRA_PD) & !is.na(dt$Land_Parcel_ID)] <- 
+  landParcels$BRA_PD[!is.na(landParcels$Land_Parcel_ID)][match(dt$Land_Parcel_ID[is.na(dt$BRA_PD) & !is.na(dt$Land_Parcel_ID)], landParcels$Land_Parcel_ID[!is.na(landParcels$Land_Parcel_ID)])]
+
+parcel2020$NSA_Name[parcel2020$NSA_Name == ""] <- NA
+
+# parcel 2022 or 21, NSA_Name, BRA_PD
+dt$NSA_Name[is.na(dt$NSA_Name) & !is.na(dt$Land_Parcel_ID)] <- 
+  parcel2020$NSA_Name[!is.na(parcel2020$Land_Parcel_ID) & !is.na(parcel2020$NSA_Name)][match(dt$Land_Parcel_ID[is.na(dt$NSA_Name) & !is.na(dt$Land_Parcel_ID)], parcel2020$Land_Parcel_ID[!is.na(parcel2020$Land_Parcel_ID) & !is.na(parcel2020$NSA_Name)])]
+
+dt$BRA_PD[is.na(dt$BRA_PD) & !is.na(dt$Land_Parcel_ID)] <- 
+  parcel2020$BRA_PD[!is.na(parcel2020$Land_Parcel_ID) & !is.na(parcel2020$BRA_PD)][match(dt$Land_Parcel_ID[is.na(dt$BRA_PD) & !is.na(dt$Land_Parcel_ID)], parcel2020$Land_Parcel_ID[!is.na(parcel2020$Land_Parcel_ID) & !is.na(parcel2020$BRA_PD)])]
+
+# parcels, gis_id
+dt$GIS_ID[is.na(dt$GIS_ID) & !is.na(dt$Land_Parcel_ID)] <-
+  parcels$GIS_ID[!is.na(parcels$GIS_ID)][match(dt$Land_Parcel_ID[is.na(dt$GIS_ID) & !is.na(dt$Land_Parcel_ID)], parcels$Ln_P_ID[!is.na(parcels$GIS_ID)])]
+
+sum(is.na(dt$long)) # 14531
+sum(!is.na(dt$long))/nrow(dt) # 97.5%
+sum(is.na(dt$Land_Parcel_ID)) # 14502
+sum(is.na(dt$BG_ID_10)) # 13251
+sum(!is.na(dt$BG_ID_10))/nrow(dt) # %97.7
+sum(is.na(dt$CT_ID_10)) # 13251
+sum(!is.na(dt$CT_ID_10))/nrow(dt) # %97.7
+sum(is.na(dt$Blk_ID_10)) # 13253
+sum(!is.na(dt$Blk_ID_10))/nrow(dt) # %97.7
+sum(is.na(dt$GIS_ID)) # 17168
+sum(!is.na(dt$GIS_ID))/nrow(dt) # %97.0
+
+length(unique(dt$Land_Parcel_ID)) #71108
+length(unique(dt$CT_ID_10)) #180
+length(unique(dt$Blk_ID_10)) #5117
+length(unique(dt$BG_ID_10)) #559
+
+dt$Blk_ID_10[!is.na(dt$Blk_ID_10)] <- format(dt$Blk_ID_10[!is.na(dt$Blk_ID_10)], scientific = FALSE)
+dt$BG_ID_10[!is.na(dt$BG_ID_10)] <- format(dt$BG_ID_10[!is.na(dt$BG_ID_10)], scientific = FALSE)
+dt$CT_ID_10[!is.na(dt$CT_ID_10)] <- format(dt$CT_ID_10[!is.na(dt$CT_ID_10)], scientific = FALSE)
+
+## this is the raw permit data + geo characteristics. Reduced NAs as possible
+# internal file
+#write.csv(dt, "/Users/saina/Downloads/permits/buildingpermitsgeoJuly10_SSH.csv", row.names = F) 
+```
+
+```{r}
+#-------------------------------------------#
+#       Making new vars                     #
+#-------------------------------------------#
+#This syntax comes from 2014 students
+
+############### categorizing permit types ###########################
+permits <- dt
+summary(permits)
+
+permits$permittypedescr = trim(str_replace_all(permits$permittypedescr,"\xe4\xf3\xf1",""))
+
+
+NEWCON = (!is.na(permits$description) & 
+            (permits$description=="Excavation Borings Test Pits" | 
+               permits$description == "New construction" | 
+               permits$description == "Erect" | 
+               permits$description == "New construction")) | 
+  (!is.na(permits$permittypedescr) & 
+     (permits$permittypedescr=="Erect/New Construction" |
+        permits$permittypedescr == "Driveway Excavation Permit" | 
+        permits$permittypedescr == "Emergency Excavation Permit" | 
+        permits$permittypedescr == "Excavation Permit" | 
+        permits$permittypedescr == "Foundation Permit"))
+
+DEMO = (!is.na(permits$description) & 
+          (permits$description =="Demolition - Exterior" | permits$description=="Demolition - Interior")) |  
+       (!is.na(permits$permittypedescr) & 
+          permits$permittypedescr== "BFD Construction  Demo  Reno" )
+
+
+ADD = (!is.na(permits$description) & 
+         (permits$description == "Addition")) | 
+  (!is.na(permits$permittypedescr) & 
+     (permits$permittypedescr == "Amendment to a Long Form" | 
+      permits$permittypedescr == "Board of Appeals" | 
+      permits$permittypedescr == "Long Form/Alteration Permit"|
+      permits$permittypedescr== "BFD Intent To Comply"))
+
+
+
+RENO = (!is.na(permits$description) & 
+          (permits$description == "Electrical" | 
+          permits$description == "Gas" | 
+          permits$description == "Plumbing" )) |
+       (!is.na(permits$permittypedescr) & 
+          (permits$permittypedescr == "BFD  Asbestos Removal" | 
+          permits$permittypedescr == "BFD  Cutting-Burning-Welding" | 
+          permits$permittypedescr == "Electrical Permit" | 
+          permits$permittypedescr == "Gas Permit" | 
+          permits$permittypedescr == "Plumbing Permit" | 
+          permits$permittypedescr == "Short Form Bldg Permit" | 
+          permits$permittypedescr == "Use of Premises" |
+          permits$permittypedescr== "Electrical Fire Alarms" | 
+          permits$permittypedescr== "Electrical Low Voltage" | 
+          permits$permittypedescr== "Electrical Temporary Service" | 
+          permits$permittypedescr== "Fire Protection Permit" | 
+          permits$permittypedescr== "Temporary Construction Drivewa" | 
+          permits$permittypedescr== "BFD  Bag Smoke Detectors" | 
+          permits$permittypedescr== "BFD  Temporary Dumpster" | 
+          permits$permittypedescr== "BFD Chemist Certificate proces" | 
+          permits$permittypedescr== "BBFD Application Tank Removal" | 
+          permits$permittypedescr== "BFD Approval of Tank Truck" | 
+          permits$permittypedescr== "BFD Install or Modify Undergrd" | 
+          permits$permittypedescr== "BFDAlteration of Fuel Oil Burn" | 
+          permits$permittypedescr== "Sidewalk Deposit" ))
+
+#combining the two categorizations
+permits$newcon<-ifelse(NEWCON, 1,0)
+permits$demo<-ifelse(!NEWCON & DEMO, 1,0)
+permits$addition<-ifelse(!NEWCON & !DEMO & ADD, 1,0)
+permits$reno<-ifelse(!NEWCON & !DEMO & !ADD & RENO, 1,0)
+
+# dropped industry religous school etc categories from last years
+
+permits$"total_fees" = ifelse(!is.na(permits$"total_fees") & permits$"total_fees"<0,NA, permits$"total_fees")
+
+#lubridating ISSUED_DATE
+require(lubridate)
+#getting rid of ""
+permits$issued_date[permits$issued_date ==""]=NA
+sum(is.na(permits$issued_date)) #0
+permits$issued_date = ymd_hms(permits$issued_date)
+sum(is.na(permits$issued_date))
+
+#lubridating EXPIRATION_DATE
+permits$expiration_date[permits$expiration_date==""|permits$expiration_date==" "]=NA
+sum(is.na(permits$expiration_date)) #22257
+permits$expiration_date = ymd_hms(permits$expiration_date)
+sum(is.na(permits$expiration_date))
+
+permits$PermitDuration = permits$expiration_date - permits$issued_date
+permits$PermitDuration[!is.na(permits$PermitDuration) & permits$PermitDuration<0]= NA
+
+permits = rename(permits,
+                   OCCUPANCY = occupancytype,
+                   NOTES = comments)
+
+
+names(permits)
+varnames = c( "PermitNumber","WORKTYPE","permittypedescr","description","NOTES",
+              "APPLICANT", "DECLARED_VALUATION","total_fees","ISSUED_DATE","EXPIRATION_DATE",
+              "STATUS","owner","OCCUPANCY","sq_feet", "ADDRESS", "CITY","STATE","ZIP",
+              "Property_ID","GIS_ID","parcel_num","X","Y","Land_Parcel_ID","TLID","Blk_ID_10","BG_ID_10","CT_ID_10",
+              "NSA_NAME","BRA_PD","newcon","addition","demo","reno","PermitDuration")
+
+#"Location", doesn't exist in 2021 data
+# could vary by year - fixing the column names
+
+names(permits)[16] <- "CITY"
+names(permits)[17] <- "STATE"
+names(permits)[18] <- "ZIP"
+names(permits)[22] <- "X"
+names(permits)[21] <- "Y"
+names(permits)[35] <- "NSA_NAME"
+names(permits)[2] <- "WORKTYPE"
+names(permits)[1] <- "PermitNumber"
+names(permits)[6] <- "APPLICANT"
+names(permits)[7] <- "DECLARED_VALUATION"
+names(permits)[9] <- "ISSUED_DATE"
+names(permits)[10] <- "EXPIRATION_DATE"
+names(permits)[11] <- "STATUS"
+names(permits)[15] <- "ADDRESS"
+
+setdiff(names(permits),varnames)
+setdiff(varnames,names(permits))
+# permits <- permits[,-1]
+
+permits = permits[,varnames]
+permits$PermitDuration <- as.numeric(permits$PermitDuration)/86400
+summary(permits)
+#save!
+write.csv(permits, paste0(BARI, permits2022_path),row.names=F)
+
+```
+
+

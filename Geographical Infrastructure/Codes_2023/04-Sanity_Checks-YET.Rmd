@@ -1,0 +1,279 @@
+---
+title: "04-Sanity_Checks-YET"
+output: html_document
+date: "2023-07-19"
+---
+
+Description:
+
+MZ: this updates similarly named AR file
+We use the sanity checks to make sure GI results are fine and comparable with previous years.
+
+# 0. Preliminary Stuff
+
+```{r Set Environment}
+## If you use the drive file format, you can use the code below. If not, put your path here.
+options(scipen=999)
+Sys.setenv(LANG = "en")
+setwd("~/Desktop/BARI/gi_2023")
+```
+
+```{r Load Libraries}
+library(tidyverse)
+library(sf)
+library(data.table)
+library(dplyr)
+```
+
+# 1. Checks
+##  checks on TLID files
+```{r}
+# file with new TLIDs from script 02_PropToTiger_* for 2021
+MtchedTLID_2023 <- read.csv("~/Desktop/BARI/GI-2023/outputs/parcels_updatedTLID_092123_YET.csv")
+#98857, 101 in Feb, 2023 #98930, 97 in 2022
+sum(is.na(MtchedTLID_2023$TLID)) #96 in Sep 23 #1484 in March, 2023
+#43 in 2018 #66 in 2019 #65 in 2020 # 1716 in 2021 
+## in next chunk I address 2021 missingness 
+MtchedTLID_2022 <- read.csv("~/Desktop/BARI/Archive/Boston Geographical Infrastructure - 2022/outputs/Parcels_updatedTLID_postsanitycheck_12152022.csv")
+```
+
+## TLIDs from previous year
+```{r}
+# for missing 2021 TLID, replaces with 2020 TLID if known
+# We actually want this error 
+
+
+
+for(pdl in MtchedTLID_2023[is.na(MtchedTLID_2023$TLID) & !is.na(MtchedTLID_2023$GIS_ID),]$GIS_ID) {
+  print(pdl)
+  MtchedTLID_2023[MtchedTLID_2023$GIS_ID == pdl & !is.na(MtchedTLID_2023$GIS_ID),]$TLID = MtchedTLID_2022[MtchedTLID_2022$MAP_PAR_ID == pdl & !is.na(MtchedTLID_2022$MAP_PAR_ID),]$TLID
+}
+
+# Error in `$<-.data.frame`(`*tmp*`, "TLID", value = integer(0)) : 
+# replacement has 0 rows, data has 1
+
+# # for missing 2021 TLID, replaces with 2020 TLID if known
+# for(pdl in MtchedTLID_2023[is.na(MtchedTLID_2023[,TLID]) & !is.na(MtchedTLID_2023[,MAP_PAR_ID]),]$MAP_PAR_ID) {
+#   print(pdl)
+#   MtchedTLID_2023[MtchedTLID_2023$MAP_PAR_ID == pdl & !is.na(MtchedTLID_2023[,MAP_PAR_ID]),]$TLID = MtchedTLID_2022[MtchedTLID_2022[,MAP_PAR_ID] == pdl & !is.na(MtchedTLID_2022[,MAP_PAR_ID]),]$TLID
+# }
+#From Sep 23
+#[1] 2001936000
+#[1] 503214000
+#[1] 200671000
+#[1] 200710000
+#[1] 200733000
+#[1] 901323500
+#[1] 301925000
+#[1] 700539001
+#[1] 903737150
+
+
+sum(is.na(MtchedTLID_2023$TLID)) #88 in Sep 23 #43 in March, 2023
+# 65 in 2020 # 47 in 2021
+
+# save final output
+fwrite(data.table(MtchedTLID_2023),"~/Desktop/BARI/GI-2023/outputs/Sanity Checks/parcels_updatedTLID_postsanitycheck_20230921.csv")
+#
+
+```
+
+
+## check difference
+```{r}
+setdiff(MtchedTLID_2023$TLID, MtchedTLID_2022$TLID) #62 different in Sep 23
+#setdiff(MtchedTLID_2021$TLID, MtchedTLID_2020$TLID) #28 different
+#setdiff(MtchedTLID_2020$TLID, MtchedTLID_2019$TLID) #64 different
+#setdiff(MtchedTLID_2020$TLID, MtchedTLID_2018$TLID) #79 different
+#setdiff(MtchedTLID_2019$TLID, MtchedTLID_2018$TLID) #15 different
+#sum(MtchedTLID_2020$TLID == 0) #0
+#sum(MtchedTLID_2019$TLID == 0) #0
+```
+
+
+## check Parcels files
+```{r}
+parcels_2023 = fread("~/Desktop/BARI/GI-2023/outputs/Parcel_final_09302023_YET.csv") #98150 #97906 in Sep 23
+
+parcels_2022 = fread("~/Desktop/BARI/Archive/Boston Geographical Infrastructure - 2022/outputs/Parcel_final_2022_postsanitychecks_12152022.csv") #98150 
+
+#parcels_2019 <- read.csv("C:/Users/bariuser2/Google Drive/BARI Research #Team Data Library/Geographical Infrastructure/Boston Geographical #Infrastructure 2019/Outputs/Parcel_final_2019_13112019.csv") #98179
+
+#parcels_2018 <- read.csv("C:/Users/bariuser2/Google Drive/BARI Research #Team Data Library/Geographical Infrastructure/Boston Geographical #Infrastructure 2018/Outputs/Parcel_final_2018_11132019.csv") #98136
+```
+
+## check descriptive statistics
+
+```{r}
+# column type
+class(parcels_2022$YR_BUILT)
+class(parcels_2022$YR_REMOD)
+
+nrow(parcels_2023[YR_BUILT > YR_REMOD,]) # 31 in Sep 23
+# 241 for 2023
+#241 parcels have the built in 2022 year higher than remod (vs 200 in 2020)
+
+# counts NAs
+sum(is.na(parcels_2023$YR_REMOD))
+#52507 in Sep 23
+#54386 in Feb 2023
+#54384 in 2021 #54898 in 2020 #55598 in 2019
+sum(is.na(parcels_2023$YR_BUILT)) 
+#13169 in Sep 23
+#13511 in Feb 2023
+#13511 in 2021 #13827 in 2020 #13998 in 2019
+
+##
+length(unique(parcels_2023$Land_Parcel_ID)) 
+#97894 in Sep 23 #98150 in March 2023 #98150 in 2022, #98146 in 2021, #98445 in 2020
+#98179 in 2019
+length(unique(parcels_2023$TLID)) 
+#13866 in Sep 23 #13826 in March 2023, #13826 in 2022 #13817 in 2021 #13833 in 2020
+#13885 in 2019
+
+```
+
+## Comment: Alina (re 2020 files)
+: I think we need to add some NSA_Name if existed in 2019
+
+## check properties files
+```{r}
+
+#this would be the resulting PAD 2021 from script 03
+properties_2023 = fread("~/Desktop/BARI/GI-2023/outputs/properties_geo_09302023_YET.csv")
+
+properties_2022 = fread("~/Desktop/BARI/Archive/Boston Geographical Infrastructure - 2022/outputs/Properties_geo_2022_postsanitychecks_12152022.csv")
+#this would be the resulting PAD 2020 from script 03
+
+#properties_2019 <- read.csv("C:/Users/bariuser2/Google Drive/BARI #Research Team Data Library/Geographical Infrastructure/Boston #Geographical Infrastructure #2019/Outputs/properties_geo_2019_11132019.csv") #this would be the #resulting PAD 2020 from script 03
+
+#properties_2018 <- read.csv("C:/Users/bariuser2/Google Drive/BARI #Research Team Data Library/Geographical Infrastructure/Boston #Geographical Infrastructure #2018/Outputs/properties_geo_2018_11132019.csv") #this would be the resulting PAD 2020 from script 03
+```
+
+## Comment: Pad zipcode with zero
+## Comment: I think we need to add some NSA_Name if existed in 2019
+```{r}
+class(properties_2023$YR_REMOD) #integer
+class(properties_2023$YR_BUILT) #integer
+
+
+
+properties_2023$ZIP_CODE <- as.integer(properties_2023$ZIP_CODE)
+class(properties_2023$ZIP_CODE) #integer
+class(properties_2022$ZIPCODE) #integer
+
+# pad zipcode with zero
+properties_2023$ZIP_CODE = paste("0", properties_2023$ZIP_CODE, sep = "")
+table(nchar(properties_2023$ZIP_CODE)) # 5, 177091 # 3 180624 in Sep 23
+
+# need shared type for next check
+properties_2022$PID = paste(properties_2022$PID)
+properties_2023$PID = paste(properties_2023$PID)
+View(setdiff(properties_2023$PID, properties_2022$PID)) 
+# 2021: 2403 2020: 3091 #4219 in Sep 23
+
+sum(is.na(properties_2023$PID)) #0
+sum(is.na(properties_2022$PID)) #0
+
+sum(is.na(properties_2023$GIS_ID)) #0 in Sep 23 #3 in 2023, #3 in 2020
+## these 3 properties seem off -- have a south boston nsa,
+### share land parcel id with a south boston/seaport building, but
+### have a different address (Tremont St) that seems to be South End
+sum(is.na(properties_2022$GIS_ID)) #3 in 2023 #0 in 2020
+
+# missing NSA?
+sum(is.na(properties_2023$NSA_Name )) #43188 in Sep 2023# 42075 in 2023 # 0: 2021 # previous people did zero which does not make sense
+#, I did it NA
+#what is NSA name, probably outdated? Toshi comment on Feb 22 2023
+
+table(paste(properties_2023$NSA_Name) %in% properties_2022$NSA_Name[match(paste(properties_2022$Land_Parcel_ID), paste(properties_2023$Land_Parcel_ID))]) 
+# in Sep 23
+# FALSE   TRUE 
+# 43188 137439 
+# in Feb 2023
+ #FALSE   #TRUE 
+ #42075  135016
+ 
+# 2021: 0 F 2020: 2331 FALSE
+```
+
+## Final Checks 
+These checks are compiled from the file "Sanity Checking code for parcels and properties"
+```{r}
+properties_final <- properties_2023
+parcels_final <- parcels_2023
+
+names(properties_final)
+n_distinct(properties_final$PID) #180448 in Sep 23 # 176915 in Feb 2023 #174681 in 2021
+sum(duplicated(properties_final)) #34 in Sep 23 # 3 in 2023
+#3 in 2021 #290 in 2020 #216 in 2019 #216 in 2018
+sum(duplicated(properties_final$PID)) #179 in Sep 23 #176 in Feb 2023 #209 in 2021
+sum(duplicated(cbind(properties_final$PID,properties_final$X,properties_final$Y,properties_final$GIS_ID,properties_final$Land_Parcel_ID,properties_final$ST_NUM,properties_final$ST_NAME,properties_final$UNIT_NUM,properties_final$LU,properties_final$OWN_OCC,properties_final$YR_BUILT,properties_final$YR_REMOD,properties_final$LAND_SF,properties_final$GROSS_AREA,properties_final$NUM_FLOORS,properties_final$unit_N))) #34 in Sep 23 #3 in 2023 #3 in 2021 #290 in 2020
+
+table(properties_final$LU[duplicated(cbind(properties_final$PID,properties_final$X,properties_final$Y,properties_final$GIS_ID,properties_final$Land_Parcel_ID,properties_final$ST_NUM,properties_final$ST_NAME,properties_final$UNIT_NUM,properties_final$LU,properties_final$OWN_OCC,properties_final$YR_BUILT,properties_final$YR_REMOD,properties_final$LAND_SF,properties_final$GROSS_AREA,properties_final$NUM_FLOORS,properties_final$unit_N))]) # here the CM has 290
+#In Sep 23: CD CM  E R3 
+#.           1  1  1 31 
+# View duplicates
+View(properties_final[duplicated(cbind(properties_final$PID,properties_final$X,properties_final$Y,properties_final$GIS_ID,properties_final$Land_Parcel_ID,properties_final$ST_NUM,properties_final$ST_NAME,properties_final$UNIT_NUM,properties_final$LU,properties_final$OWN_OCC,properties_final$YR_BUILT,properties_final$YR_REMOD,properties_final$LAND_SF,properties_final$GROSS_AREA,properties_final$NUM_FLOORS,properties_final$unit_N)),])
+
+summary(properties_final$unit_N)
+View(properties_final[properties_final$unit_N>1000,]) # 2023: none,# 2021: none
+# 2020: GIS ID 1303445000 has 1271 units
+nrow(properties_final[properties_final$Land_Parcel_ID==300450000,]) 
+#866 in 2020; #865 in 2021 #865 in 2023 #865 in Sep 23
+n_distinct(properties_final$Blk_ID_20) # 5155 in Sep 23 #5158 in Feb 2023 #5478 in 2021 #5479 in 2020
+#View(table(properties_final$Blk_ID_10))
+n_distinct(properties_final$BG_ID_20)  #582 in Sep 23 #582 in Feb 2023 #560 in 2021 # 560 in 2020
+#View(table(properties_final$BG_ID_10))
+#View(table(properties_final$CT_ID_10))
+
+names(parcels_final)
+n_distinct(parcels_final$Land_Parcel_ID) #97894 in Sep 23 #98150 in Feb 2023 #98146 in 2021 #98445 in 2020
+summary(parcels_final$property_N)
+View(parcels_final[parcels_final$property_N>500,]) #4 have more than 500 in 2023 (same as 2020, 2021)
+summary(parcels_final$unit_N)
+summary(parcels_final$unit_N_orig)
+n_distinct(parcels_final$Blk_ID_20) #5155 in Sep 23 #5156 in Feb 2023, #5479 in 2021
+View(table(parcels_final$Blk_ID_20))
+n_distinct(parcels_final$BG_ID_20) #582 in Feb 2023, #560 in 2021
+View(table(parcels_final$BG_ID_20))
+n_distinct(parcels_final$CT_ID_20) #209 in Feb 2023, #182 in 2021
+View(table(parcels_final$CT_ID_20))
+View(table(parcels_final$TLID))
+
+max(parcels_final$Land_Parcel_ID) #2205670000 in 2023,2021 and 2020
+
+```
+
+## Save final 2022 files 
+```{r}
+# parcel 2023
+fwrite(parcels_final, "~/Desktop/BARI/GI-2023/outputs/Sanity Checks/Parcel_final_20230921_YET_postsanitychecks.csv")
+
+# property 2023
+fwrite(properties_final, "~/Desktop/BARI/GI-2023/outputs/Sanity Checks/properties_geo_20230921_YET_postsanitychecks.csv")
+
+```
+
+## Dan's updates 
+This chunk is after Dan reviewed the files. making a few updates.
+```{r}
+# parcel 2022
+#parcels_2023 = fread("Parcel_final_20230331_TY_postsanitychecks.csv")
+# reorder variables --> full address should be 2nd, not last
+setcolorder(parcels_final,c("Land_Parcel_ID","full_address"))
+fwrite(parcels_final, "~/Desktop/BARI/GI-2023/outputs/Sanity Checks/Parcel_final_20230911_YET_postsanitychecks.csv")
+
+# property 2021
+#properties_2022 = fread("properties_geo_20230331_TY_postsanitychecks.csv")
+# drop 3 pure duplicates
+properties_final = unique(properties_final)
+fwrite(properties_final, "~/Desktop/BARI/GI-2023/outputs/Sanity Checks/properties_geo_20230911_YET_postsanitychecks.csv")
+```
+
+
+
+
+
+
+

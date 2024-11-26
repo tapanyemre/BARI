@@ -1,0 +1,438 @@
+#######
+# new dataset
+# library(plyr)
+library("tidyverse")
+library(dplyr)
+
+
+BARI = "D:/Google Drive/BARI Research Team Data Library/"
+old <- read.csv("~/Desktop/BARI/new datasets/Property Assesments/fy2022pa-4.csv")
+### INPUT PATHS ###
+#PADCross = "Property Assessment Data/Data/property2020.csv"
+#SAM = "Property Assessment Data/Data/Archived Data/Live_Street_Address_Management_SAM_Addresses.csv"
+
+# READ IN FILES
+#property_dt = read.csv(paste0(BARI, PADCross),stringsAsFactors = FALSE) #175052
+#SAM_dt = read.csv(paste0(BARI, SAM),stringsAsFactors = FALSE) #398386 rows
+property_dt <- read.csv("~/Desktop/BARI/PA-2023/base_data/fy2023-property-assessment-data.csv") #177091
+SAM_dt <- read.csv("~/Desktop/BARI/PA-2023/base_data/Live_Street_Address_Management_SAM_Addresses.csv") #399198
+############## preparing data
+
+# defining unit_N by LU
+property_dt$unit_N_org <- NA
+property_dt[property_dt$LU == "R1",]$unit_N_org <- 1
+property_dt[property_dt$LU == "R2",]$unit_N_org <- 2
+property_dt[property_dt$LU == "R3",]$unit_N_org <- 3
+property_dt[property_dt$LU == "CL",]$unit_N_org <- 0
+property_dt[property_dt$LU == "RL - RL",]$unit_N_org <- 0 #error here , yet used "RL - RL" here 
+property_dt[property_dt$LU == "CP",]$unit_N_org <- 0
+property_dt[property_dt$LU == "CM",]$unit_N_org <- 1
+property_dt[property_dt$LU == "AH",]$unit_N_org <- 1
+property_dt[property_dt$LU == "CD" & property_dt$UNIT_NUM != "",]$unit_N_org <- 1
+
+SAM_dt <- SAM_dt %>% 
+  dplyr::group_by(BUILDING_ID) %>%
+  dplyr::mutate(unit_count = n())
+
+SAM_dt <- SAM_dt[!is.na(SAM_dt$PARCEL),] # droping NAs in SAM_dt parcels
+names(SAM_dt)[27] <- "GIS_ID"
+
+
+
+SAM_dt <- SAM_dt[,c("GIS_ID", "unit_count")]
+SAM_dt <- SAM_dt[!duplicated(SAM_dt),]
+
+property_dt$unit_count <- SAM_dt$unit_count[match(property_dt$GIS_ID, SAM_dt$GIS_ID)]
+
+#data_all <- left_join(property_dt, SAM_dt, by = "GIS_ID")
+# a <- data_all[!duplicated(data_all),] #212393
+
+# what we did here is, we counted the number of units in each property in SAM, and then merge this unit_count into property_id by parcel number. now the new problem is that the nrow has increase 216700 - 174668 = 42032. same GIS_id, same PID, different unit_count in property_id. This records have ferent property ids in SAM
+
+A <- property_dt %>% group_by(.dots=names(property_dt)[-grep("unit_count", names(property_dt))]) %>%
+  mutate(New_unit = sum(unit_count))
+
+#A <- plyr::ddply(property_dt, ~PID+ CM_ID+GIS_ID+ST_NUM+ST_NAME+UNIT_NUM+ CITY+ ZIPCODE+ BLDG_SEQ+ NUM_BLDGS+ LUC + LU+ LU_DESC + BLDG_TYPE+ OWN_OCC+ OWNER+ MAIL_ADDRESSEE+ MAIL_ADDRESS+ MAIL_CITY+ MAIL_STATE+ MAIL_ZIPCODE+ RES_FLOOR+ CD_FLOOR+RES_UNITS+ COM_UNITS+ LAND_SF+ GROSS_AREA+ LIVING_AREA+ LAND_VALUE+  BLDG_VALUE+ TOTAL_VALUE+ GROSS_TAX+ YR_BUILT+ YR_REMODEL+ STRUCTURE_CLASS+ ROOF_STRUCTURE+ROOF_COVER+  INT_WALL+EXT_FINISHED+INT_COND+EXT_COND+OVERALL_COND +BED_RMS+ FULL_BTH+HLF_BTH+ KITCHEN+ TT_RMS+  BDRM_COND+ BTHRM_STYLE1+ BTHRM_STYLE2+ BTHRM_STYLE3+ KITCHEN_TYPE+ KITCHEN_STYLE1+ KITCHEN_STYLE2 +KITCHEN_STYLE3 + HEAT_TYPE+ HEAT_FUEL+ AC_TYPE+ FIRE_PLACE+ PlUMBING+ NUM_PARKING + PROP_VIEW+ CORNER_UNIT + unit_N_org, summarise, New_unit = sum(unit_count))
+
+# combining the two unit columns
+
+A$unit_N <- ifelse(is.na(A$unit_N_org), A$New_unit, A$unit_N_org)
+A$unit_N_orig <- A$unit_N
+data_all <- A 
+# this dataset has --- NA values of units- 177091 rows - we went from 23032 NAs to 5560
+#data_all[76] <- NULL
+#data_all[76] <- NULL
+sum(is.na(data_all$unit_N)) 
+#13194 ? #5553 in Aug 23
+remove_columns <- c("unit_count", "New_unit", "unit_N_org")
+data_all <- subset(data_all, select = !(names(data_all) %in% remove_columns))
+#### ??????????? What is "pa" here?????????????
+
+
+
+#names(data_all)[76] <- "unit_N"
+#data_all$unit_N_orig <- data_all$unit_N redundant as we already assigned it at #70
+data_all$GROSS_AREA_org <- data_all$GROSS_AREA
+data_all$LIVING_AREA_org <- data_all$LIVING_AREA
+
+apply(data_all,2,function(x) sum(is.na(x))) # this dataset has 14126 NA values of units 
+
+
+
+#######################
+###Start of the code
+
+#cols_final = c('PID','GROSS_AREA','BLDG_VALUE','LAND_VALUE','LIVING_AREA','LAND_SF','LU','AV_TOTAL','unit_N')
+#data_all <- fread("D:/School/Semester 4/BARI/dt.csv",select = cols_final)
+#data_all <- fread("D:/School/Semester 4/BARI/dt.csv")
+
+#Segregating the LU types which do not have NA values for the unit_N column and processing the subset with NA values separately
+data_original <- data_all
+data_all_other <- data_original[!(data_original$LU != "RL" & data_original$LU != "AH" &  data_original$LU != "CM" & 
+                                     data_original$LU != "CL" & data_original$LU != "R1" & data_original$LU != "R2" & data_original$LU != "R3"),]
+data_all <- data_all[(data_all$LU != "RL" & data_all$LU != "AH" &  data_all$LU != "CM" & 
+                        data_all$LU != "CL" & data_all$LU != "R1" & data_all$LU != "R2" & data_all$LU != "R3"),]
+ 
+# Formatting the tax values by removing the $ symbols
+data_all$BLDG_VALUE = as.numeric(gsub("[\\$,]", "", data_all$BLDG_VALUE))
+data_all$LAND_VALUE = as.numeric(gsub("[\\$,]", "", data_all$LAND_VALUE))
+data_all$TOTAL_VALUE = as.numeric(gsub("[\\$,]", "", data_all$TOTAL_VALUE))
+data_all$GROSS_TAX = as.numeric(gsub("[\\$,]", "", data_all$GROSS_TAX))
+#Missing value count for all the columns
+apply(data_all,2,function(x) sum(is.na(x)))
+
+#Impute missing data for GROSS_AREA
+quantile(data_all[!is.na(data_all$GROSS_AREA),]$GROSS_AREA ,na.rm = TRUE,probs = c(0.05,0.95))
+#quantile(data_all[!is.na(data_all$LIVING_AREA),]$LIVING_AREA ,na.rm = TRUE,probs = c(0.05,0.95))
+data_all$GROSS_AREA <- ifelse(is.na(data_all$GROSS_AREA), 0, data_all$GROSS_AREA)
+data_all$LIVING_AREA <- ifelse(is.na(data_all$LIVING_AREA), 0, data_all$LIVING_AREA)
+
+###### start guessing to be able to guess!
+lm_md_gross_area =glm(GROSS_TAX ~ LIVING_AREA + GROSS_AREA, 
+                       data=data_all[!is.na(data_all$GROSS_TAX),])
+glm_pred_gross_area <- predict.glm(lm_md_gross_area, 
+                                   newdata = data_all[is.na(data_all$GROSS_TAX),],
+                                   type = "response")
+
+data_all[is.na(data_all$GROSS_TAX),'GROSS_TAX'] <- as.integer(glm_pred_gross_area)
+
+summary(data_all)
+
+lm_md_gross_area =glm(TOTAL_VALUE ~ GROSS_TAX + GROSS_AREA, 
+                       data=data_all[!is.na(data_all$TOTAL_VALUE),])
+glm_pred_gross_area <- predict.glm(lm_md_gross_area, 
+                                   newdata = data_all[is.na(data_all$TOTAL_VALUE),],
+                                   type = "response")
+
+data_all[is.na(data_all$TOTAL_VALUE),'TOTAL_VALUE'] <- as.integer(glm_pred_gross_area)
+
+
+lm_md_gross_area =glm(BLDG_VALUE ~ TOTAL_VALUE + GROSS_TAX, 
+                       data=data_all[!is.na(data_all$BLDG_VALUE),])
+glm_pred_gross_area <- predict.glm(lm_md_gross_area, 
+                                   newdata = data_all[is.na(data_all$BLDG_VALUE),],
+                                   type = "response")
+
+# hist(glm_pred_gross_area)
+# summary(glm_pred_gross_area)
+data_all[is.na(data_all$BLDG_VALUE),'BLDG_VALUE'] <- as.integer(glm_pred_gross_area)
+
+
+lm_md_gross_area =glm(LAND_VALUE ~ BLDG_VALUE + GROSS_TAX, 
+                       data=data_all[!is.na(data_all$LAND_VALUE),])
+glm_pred_gross_area <- predict.glm(lm_md_gross_area, 
+                                   newdata = data_all[is.na(data_all$LAND_VALUE),],
+                                   type = "response")
+
+# hist(glm_pred_gross_area)
+# summary(glm_pred_gross_area)
+data_all[is.na(data_all$LAND_VALUE),'LAND_VALUE'] <- as.integer(glm_pred_gross_area)
+
+
+#AV_TOTAL causes the coeffs to be NA (rank deficiency)
+lm_md_gross_area =glm(GROSS_AREA ~ BLDG_VALUE + LAND_VALUE, 
+                       data=data_all[!is.na(data_all$GROSS_AREA),])
+glm_pred_gross_area <- predict.glm(lm_md_gross_area, 
+                                   newdata = data_all[is.na(data_all$GROSS_AREA),],
+                                   type = "response")
+# hist(glm_pred_gross_area)
+# summary(glm_pred_gross_area)
+data_all[is.na(data_all$GROSS_AREA),'GROSS_AREA'] <- as.integer(glm_pred_gross_area)
+
+#Impute missing data for LIVING_AREA
+quantile(data_all[!is.na(data_all$LIVING_AREA),]$LIVING_AREA ,na.rm = TRUE,probs = c(0.05,0.95))
+lm_md_living_area = glm(LIVING_AREA ~ BLDG_VALUE + LAND_VALUE + GROSS_AREA, 
+                        data=data_all[!is.na(data_all$GROSS_AREA) ,])
+glm_pred_living_area <- predict.glm(lm_md_living_area, 
+                                    newdata = data_all[is.na(data_all$LIVING_AREA),], 
+                                    type = "response")
+# hist(glm_pred_living_area)
+# summary(glm_pred_living_area)
+data_all[is.na(data_all$LIVING_AREA),'LIVING_AREA'] <- as.integer(glm_pred_living_area)
+######## now ready to guess unit N
+
+apply(data_all,2,function(x) sum(is.na(x)))
+
+# LUvec <- unique(data_all$LU)
+# LUvec
+#"R4" "C"  "RC" "E"  "CD" "A"  "I"  "CC" "EA" "CP"
+
+###Impute unit_N for different LU
+#LUvec = "R4"
+md_r4 = glm(unit_N ~ GROSS_AREA + BLDG_VALUE + LAND_VALUE , 
+            family = poisson(link = "log"), 
+            data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='R4')),])
+glm_pred_r4 <- predict.glm(md_r4, 
+                           newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='R4')),], 
+                           type = "response")
+# hist(glm_pred_r4)
+# summary(glm_pred_r4)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='R4')),"LUC"] <- as.integer(glm_pred_r4)
+#names(data_all)
+#LUvec = "C"
+md_c = glm(unit_N ~ GROSS_AREA + BLDG_VALUE + LAND_VALUE , 
+           family = poisson(link = "log"), 
+           data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='C')),])
+glm_pred_c <- predict.glm(md_c, 
+                          newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='C')),], 
+                          type = "response")
+
+
+# hist(glm_pred_c)
+# summary(glm_pred_c)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='C')),"LUC"] <- as.integer(glm_pred_c)
+
+#LUvec = "RC"
+md_rc = glm(unit_N ~ GROSS_AREA + BLDG_VALUE + LAND_VALUE , 
+            family = poisson(link = "log"), 
+            data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='RC')),])
+glm_pred_rc <- predict.glm(md_rc, 
+                           newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='RC')),], 
+                           type = "response")
+# hist(glm_pred_rc)
+# summary(glm_pred_rc)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='RC')),"LUC"] <- as.integer(glm_pred_rc)
+
+
+#LUvec = "E"
+md_e = glm(unit_N ~ LAND_VALUE + GROSS_AREA + LIVING_AREA + BLDG_VALUE, 
+           family = poisson(link = "log"), 
+           data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='E')),])
+glm_pred_e <- predict.glm(md_e, newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='E')),], type = "response")
+#   + LAND_VALUE
+# hist(glm_pred_e)
+summary(glm_pred_e)
+summary(md_e)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='E')),"LUC"] <- as.integer(glm_pred_e)
+
+#LUvec = "CD"
+# dim(data_all[(!is.na(data_all$unit_N) & (data_all$LU=='CD')),])
+#[1]  0 82
+
+########It seems we have all the units for CD category probably from previous SAM data
+# + LAND_VALUE
+md_cd = glm(unit_N ~  BLDG_VALUE + GROSS_AREA ,
+           family = poisson(link = "log"),
+          data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='CD')),])
+glm_pred_cd <- predict.glm(md_cd,
+                          newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='CD')),],
+                          type = "response")
+# # hist(glm_pred_cd)
+#  summary(glm_pred_cd)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='CD')),"LUC"] <- as.integer(glm_pred_cd)
+
+
+#LUvec = "A"
+md_a = glm(unit_N ~ GROSS_AREA + BLDG_VALUE + LAND_VALUE , 
+           family = poisson(link = "log"), 
+           data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='A')),])
+glm_pred_a <- predict.glm(md_a, 
+                          newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='A')),], 
+                          type = "response")
+# hist(glm_pred_a)
+# summary(glm_pred_a)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='A')),"LUC"] <- as.integer(glm_pred_a)
+
+
+#LUvec = "I"
+md_i = glm(unit_N ~ GROSS_AREA + LAND_VALUE , 
+           family = poisson(link = "log"), 
+           data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='I')),])
+glm_pred_i <- predict.glm(md_i, 
+                          newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='I')),], 
+                          type = "response")
+# hist(glm_pred_i)
+# summary(glm_pred_i)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='I')),"LUC"] <- as.integer(glm_pred_i)
+
+#LUvec = "CC"
+########It seems we have all the units for CD category probably from previous SAM data
+md_cc = glm(unit_N ~ GROSS_AREA + BLDG_VALUE + LAND_VALUE ,
+           family = poisson(link = "log"), 
+           data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='CC')),])
+glm_pred_cc <- predict.glm(md_cc, 
+                          newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='CC')),], 
+                          type = "response")
+# hist(glm_pred_cc)
+# summary(glm_pred_cc)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='CC')),"LUC"] <- as.integer(glm_pred_cc)
+
+
+#LUvec = "EA"
+
+md_ea = glm(unit_N ~ GROSS_AREA + BLDG_VALUE + LAND_VALUE ,
+            family = poisson(link = "log"), 
+            data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='EA')),])
+glm_pred_ea <- predict.glm(md_ea, 
+                           newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='EA')),], 
+                           type = "response")
+# hist(glm_pred_ea)
+# summary(glm_pred_ea)
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='EA')),"LUC"] <- as.integer(glm_pred_ea)
+
+
+#LUvec = "CP"
+########It seems we have all the units for CP category probably from previous SAM data
+## Inf?????
+
+# X1 %>% select(GROSS_ARE)
+
+## temporary
+# md_cp = glm(unit_N ~ AV_TOTAL  ,
+#             family = poisson(link = "log"), maxit = 600,
+#             data = data_all[(!is.na(data_all$unit_N) & (data_all$LU=='CP')),])
+# glm_pred_cp <- predict.glm(md_cp,
+#                            newdata = data_all[(is.na(data_all$unit_N) & (data_all$LU=='CP')),],
+#                            type = "response")
+## temporary
+
+
+# hist(glm_pred_cp)
+# quantile(X1$unit_N, na.rm = TRUE)
+# summary(glm_pred_cp)
+#data_all[(is.na(data_all$unit_N) & (data_all$LU=='CP')),9] <- as.integer(glm_pred_cp)
+
+############################# Imputing the unit_N for the rows with missing values ##########################
+
+k <- data_all[(is.na(data_all$unit_N)),]
+# Handling the outliers of the dataset by imputing the unit_N as 1000 instead of NA
+data_all[data_all$PID %in% c(k$PID), "unit_N"] <- 1000
+data_all[(is.na(data_all$unit_N)),"unit_N"] <- 0
+data_all[data_all$PID==304102000,"unit_N"] <- 849 #Based on internet research. Subject to inaccuracy
+k$unit_N <- 1000
+write.csv(k, '~/Desktop/BARI/PA-2023/output-new2/PA_outliers.csv', row.names= FALSE)
+
+#############################################################################################################
+
+#??????????????????? gives an error here ??????????????????????????
+
+#Impute all the missing
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='R4')),'unit_N'] <- as.list(as.integer(ceiling(glm_pred_r4)))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='C')),'unit_N'] <- as.integer(ceiling(glm_pred_c))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='RC')),'unit_N'] <- as.integer(ceiling(glm_pred_rc))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='E')),'unit_N'] <- as.integer(ceiling(glm_pred_e))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='CD')),"unit_N"] <- as.integer(ceiling(glm_pred_cd))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='A')),'unit_N'] <- as.integer(ceiling(glm_pred_a))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='I')),'unit_N'] <- as.integer(ceiling(glm_pred_i))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='CC')),"unit_N"] <- as.integer(ceiling(glm_pred_cc))
+data_all[(is.na(data_all$unit_N) & (data_all$LU=='EA')),'unit_N'] <- as.integer(ceiling(glm_pred_ea))
+#data_all[(is.na(data_all$unit_N) & (data_all$LU=='CP')),"unit_N"] <- as.integer(ceiling(glm_pred_cp))
+
+apply(data_all,2,function(x) sum(is.na(x)))
+
+# data_all[data_all$LU == "R1",]$unit_N <- 1
+# data_all[data_all$LU == "R2",]$unit_N <- 2
+# data_all[data_all$LU == "R3",]$unit_N <- 3
+# data_all[data_all$LU == "CL",]$unit_N <- 0
+# data_all[data_all$LU == "RL",]$unit_N <- 0
+# data_all[data_all$LU == "CP",]$unit_N <- 0
+# data_all[data_all$LU == "CM",]$unit_N <- 1
+# data_all[data_all$LU == "AH",]$unit_N <- 1
+# 
+# apply(data_all,2,function(x) sum(is.na(x)))
+
+
+# data_all %>% 
+#   filter(is.na(unit_N)) %>% 
+#   group_by(LU) %>% 
+#   summarise(count = n())
+
+# Total percentage of NAs in Unit_N column in the dataset
+
+(sum(is.na(data_all$unit_N))/nrow(data_all))*100
+
+# write.csv(data_all, "D:/School/BARI/Semester4/GI/data_unit_fnl.csv", row.names=F)
+
+
+#summary of unit_N
+# summary(data_all$unit_N)
+# summary(data_original$unit_N)
+# quantile(data_all$unit_N,probs = c(0.01,0.05,0.25,0.5,0.75,0.95,0.99))
+# quantile(data_original$unit_N[!is.na(data_original$unit_N)],probs = c(0.01,0.05,0.25,0.5,0.75,0.95,0.99),rm.na = TRUE)
+# 
+table(data_all$LU,is.na(data_all$unit_N))
+#FALSE  TRUE
+#A   2858     0
+#C   4443     0
+#CC     0  1794
+#CD     0 62647
+#CP     0  5479
+#E   8745     0
+#EA   610     0
+#I    496     0
+#R4  2576     0
+#RC  2950     0
+# merging with the property assessment dataset
+# 
+# table(data_original$LU,is.na(data_all$unit_N))
+# nrow(data_all)
+# 
+# dtt <- fread("D:/School/Semester 4/BARI/dt1.csv")
+# nrow(dtt)
+# gc()
+# 
+# data_join <- dtt %>%
+#   left_join(data_all, by = "PID")
+# 
+# 
+# memory.limit()
+# memory.limit(size=600000)
+
+
+
+
+# 2022
+#Getting the array indices for rows satisfying the filter condition inside the which command and imputing the unit_N for those rows with 500 in the dataframe
+arr_ind <- c(which(data_all$unit_N > 500 & is.na(data_all$unit_N_orig)), arr.ind = TRUE)
+data_all[arr_ind,"unit_N"] = 500
+
+#PArecord_final_path = "Property Assessment Data/Data/PAD.Record.wUnit.05082020.csv"
+#write.csv(data_all, paste0(BARI, PArecord_final_path), row.names=F)
+
+############ Formatting the data properly and combining with the data_all_other part #############
+data_all$LAND_VALUE <- as.character(data_all$LAND_VALUE)
+data_all$BLDG_VALUE <- as.character(data_all$BLDG_VALUE)
+data_all$TOTAL_VALUE <- as.character(data_all$TOTAL_VALUE)
+data_all$GROSS_TAX <- as.character(data_all$GROSS_TAX)
+data_all_final <- rbind(data_all, data_all_other)
+
+write.csv(data_all, '~/Desktop/BARI/PA-2023/outputs/PAD.Record.wUnit08242023.csv', row.names=F)
+# > 100267/175004
+# [1] 0.5729412
+
+
+```{r}
+#### add TLIDs
+
+TLID <- read.csv("C:/Users/ux305/Google Drive/BARI Research Team Data Library/Geographical Infrastructure/Boston Geographical Infrastructure 2019/Data/parcels_fullupdatedTLID_190713.csv")
+
+
+data_all1$TLID <- TLD$TLID[match(data_all_final$PID,TLD$PID)]
+
+```
+
+
+
+
+
+
