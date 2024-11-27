@@ -385,6 +385,32 @@ for (j in 1:length(time)) {
 end1 <- Sys.time()
 end1-start1
 
+### The for loop produces less than the amount of blocks in Boston, we merge them back here and fill NAs with zeros
+Ext_Ecometrics_Blk_Month <- read.csv("911/Final/Ext_Ecometrics_Blk_Month_Nov2024.csv")
+Ext_Ecometrics_Blk_Year <- read.csv("911/Final/Ext_Ecometrics_Blk_Year_Nov2024.csv")
+Int_Ecometrics_Blk_Month <- read.csv("911/Final/Int_Ecometrics_Blk_Month_Nov2024.csv")
+Int_Ecometrics_Blk_Year <- read.csv("911/Final/Int_Ecometrics_Blk_Year_Nov2024.csv")
+
+Blocks_2020 <- Blocks[,"Blk_ID_20", drop = FALSE]
+# Step 2: Merge with `Blocks_2020` and Fill Missing Values
+Ext_Ecometrics_Blk_Month_Updated <- merge(Blocks_2020, Ext_Ecometrics_Blk_Month, by = "Blk_ID_20", all.x = TRUE)
+Ext_Ecometrics_Blk_Month_Updated[is.na(Ext_Ecometrics_Blk_Month_Updated)] <- 0
+
+Ext_Ecometrics_Blk_Year_Updated <- merge(Blocks_2020, Ext_Ecometrics_Blk_Year, by = "Blk_ID_20", all.x = TRUE)
+Ext_Ecometrics_Blk_Year_Updated[is.na(Ext_Ecometrics_Blk_Year_Updated)] <- 0
+
+Int_Ecometrics_Blk_Month_Updated <- merge(Blocks_2020, Int_Ecometrics_Blk_Month, by = "Blk_ID_20", all.x = TRUE)
+Int_Ecometrics_Blk_Month_Updated[is.na(Int_Ecometrics_Blk_Month_Updated)] <- 0
+
+Int_Ecometrics_Blk_Year_Updated <- merge(Blocks_2020, Int_Ecometrics_Blk_Year, by = "Blk_ID_20", all.x = TRUE)
+Int_Ecometrics_Blk_Year_Updated[is.na(Int_Ecometrics_Blk_Year_Updated)] <- 0
+
+# Step 3: Save Each Updated Dataset
+write.csv(Ext_Ecometrics_Blk_Month_Updated, "Ext_Ecometrics_Blk_Month_merged.csv", row.names = FALSE)
+write.csv(Ext_Ecometrics_Blk_Year_Updated, "Ext_Ecometrics_Blk_Year_merged.csv", row.names = FALSE)
+write.csv(Int_Ecometrics_Blk_Month_Updated, "Int_Ecometrics_Blk_Month_merged.csv", row.names = FALSE)
+write.csv(Int_Ecometrics_Blk_Year_Updated, "Int_Ecometrics_Blk_Year_merged.csv", row.names = FALSE)
+
 
 
 ### YET: DID NOT USE THE CODE BELOW IN 2024 ########################
