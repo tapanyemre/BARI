@@ -413,6 +413,101 @@ write.csv(Int_Ecometrics_Blk_Year_Updated, "Int_Ecometrics_Blk_Year_merged.csv",
 
 
 
+#obtain long versions:
+#load libraries
+library(tidyr)
+library(dplyr)
+#read the wide format data
+Ecometrics_Blk_Month <- read.csv("~/Desktop/Academic/BARI/911/dataverse/external/Ext_Ecometrics_Blk_Month_merged.csv")
+Ecometrics_Blk_Year <- read.csv("~/Desktop/Academic/BARI/911/dataverse/external/Ext_Ecometrics_Blk_Year_merged.csv")
+Ecometrics_BG_Month <- read.csv("~/Desktop/Academic/BARI/911/dataverse/external/Ext_Ecometrics_BG_Month_Nov2024.csv")
+Ecometrics_BG_Year <- read.csv("~/Desktop/Academic/BARI/911/dataverse/external/Ext_Ecometrics_BG_Year_Nov2024.csv")
+Ecometrics_CT_Month <- read.csv("~/Desktop/Academic/BARI/911/dataverse/external/Ext_Ecometrics_CT_Month_Nov2024.csv")
+Ecometrics_CT_Year <- read.csv("~/Desktop/Academic/BARI/911/dataverse/external/Ext_Ecometrics_CT_Year_Nov2024.csv")
+
+# Reshape data from wide to long format
+Ecometrics_BG_Year_Long <- Ecometrics_BG_Year %>%
+  pivot_longer(
+    cols = -BG_ID_20,  # All columns except BG_ID_20 should be reshaped
+    names_to = c("ecometric", "year"),  # Separate wide column names into two variables
+    names_sep = "_",  # Use "_" to split column names
+    values_to = "value"  # The reshaped values will be in this column
+  ) %>%
+  mutate(year = as.integer(year))  %>%  # Ensure 'year' is treated as an integer
+  arrange(ecometric, year, BG_ID_20)  # Order by ecometric, then year, then BG_ID_20
+
+Ecometrics_Blk_Year_Long <- Ecometrics_Blk_Year %>%
+  pivot_longer(
+    cols = -Blk_ID_20,  # All columns except Blk_ID_20 should be reshaped
+    names_to = c("ecometric", "year"),  # Separate wide column names into two variables
+    names_sep = "_",  # Use "_" to split column names
+    values_to = "value"  # The reshaped values will be in this column
+  ) %>%
+  mutate(year = as.integer(year))  %>%  # Ensure 'year' is treated as an integer
+  arrange(ecometric, year, Blk_ID_20)  # Order by ecometric, then year, then Blk_ID_20
+
+Ecometrics_CT_Year_Long <- Ecometrics_CT_Year %>%
+  pivot_longer(
+    cols = -CT_ID_20,  # All columns except CT_ID_20 should be reshaped
+    names_to = c("ecometric", "year"),  # Separate wide column names into two variables
+    names_sep = "_",  # Use "_" to split column names
+    values_to = "value"  # The reshaped values will be in this column
+  ) %>%
+  mutate(year = as.integer(year))  %>%  # Ensure 'year' is treated as an integer
+  arrange(ecometric, year, CT_ID_20)  # Order by ecometric, then year, then CT_ID_20
+
+
+Ecometrics_Blk_Month_Long <- Ecometrics_Blk_Month %>%
+  pivot_longer(
+    cols = -Blk_ID_20,  # All columns except Blk_ID_20
+    names_to = c("ecometric", "month", "year"),  # Separate wide column names into ecometric, month, and year
+    names_sep = "_",  # Split column names by "_"
+    values_to = "value"  # Reshape values into 'value' column
+  ) %>%
+  mutate(
+    month = as.integer(month),  # Ensure 'month' is an integer
+    year = as.integer(year)  # Ensure 'year' is an integer
+  ) %>%
+  arrange(ecometric, year,month, Blk_ID_20)  # Order by ecometric, then year, then Blk_ID_20
+
+Ecometrics_BG_Month_Long <- Ecometrics_BG_Month %>%
+  pivot_longer(
+    cols = -BG_ID_20,  # All columns except BG_ID_20
+    names_to = c("ecometric", "month", "year"),  # Separate wide column names into ecometric, month, and year
+    names_sep = "_",  # Split column names by "_"
+    values_to = "value"  # Reshape values into 'value' column
+  ) %>%
+  mutate(
+    month = as.integer(month),  # Ensure 'month' is an integer
+    year = as.integer(year)  # Ensure 'year' is an integer
+  ) %>%
+  arrange(ecometric, year, month, BG_ID_20)  # Order by ecometric, then year, then BG_ID_20
+
+Ecometrics_CT_Month_Long <- Ecometrics_CT_Month %>%
+  pivot_longer(
+    cols = -CT_ID_20,  # All columns except CT_ID_20
+    names_to = c("ecometric", "month", "year"),  # Separate wide column names into ecometric, month, and year
+    names_sep = "_",  # Split column names by "_"
+    values_to = "value"  # Reshape values into 'value' column
+  ) %>%
+  mutate(
+    month = as.integer(month),  # Ensure 'month' is an integer
+    year = as.integer(year)  # Ensure 'year' is an integer
+  ) %>%
+  arrange(ecometric, year, month, CT_ID_20)  # Order by ecometric, then year, then CT_ID_20
+
+
+
+
+
+#Save Each Updated Dataset
+write.csv(Ecometrics_BG_Year_Long, "911 Ecometrics CBG Longitudinal, Yearly, long (2023).csv", row.names = FALSE)
+write.csv(Ecometrics_Blk_Year_Long, "911 Ecometrics BLK Longitudinal, Yearly, long (2023).csv", row.names = FALSE)
+write.csv(Ecometrics_CT_Year_Long, "911 Ecometrics CT Longitudinal, Yearly, long (2023).csv", row.names = FALSE)
+write.csv(Ecometrics_BG_Month_long, "911 Ecometrics CBG Longitudinal, Monthly, long (2023).csv", row.names = FALSE)
+write.csv(Ecometrics_CT_Month_long, "911 Ecometrics CT Longitudinal, Monthly, long (2023).csv", row.names = FALSE)
+write.csv(Ecometrics_Blk_Month, "911 Ecometrics BLK Longitudinal, Monthly, long (2023).csv", row.names = FALSE)
+
 ### YET: DID NOT USE THE CODE BELOW IN 2024 ########################
 
 
