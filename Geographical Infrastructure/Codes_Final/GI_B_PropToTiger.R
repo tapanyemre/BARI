@@ -537,8 +537,8 @@ sum(is.na(P24$TLID)) #124 in 2024 #434 in Aug 23, #1149 in March 2023.
 
 
 
-
 #### TO RUN: find streets close to parcels by applying a buffer over the parcels ####
+# The process is trying to fill NA values in TLID column by finding streets close to parcels by applying a buffer over the parcels.
 
 # create a df for parcels which do not have TLID associated
 TLID_NA <- P24shp_centroid%>%
