@@ -70,7 +70,7 @@ rm(propassraw)
 
 ## 1.a Create vectors of just GIS_ID and PID_LONG
 
-YET: As of August 23rd, there is no longer a PID_LONG column. Instead, there is a MAP_PAR_ID column.
+YET: As of August 23rd, there is no longer a PID_LONG column. Instead, there is a MAP_PAR_ID column. Last year, the raw data included a GIS_ID column as MAP_PAR_ID. Therefore, I have included this line as an alternative but #-ed out.
 
 ```{r Create Vectors}
 gisid <- prop24$GIS_ID[!duplicated(prop24$GIS_ID)]
