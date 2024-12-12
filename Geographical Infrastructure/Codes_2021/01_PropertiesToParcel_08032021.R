@@ -1,9 +1,3 @@
----
-title: "R Notebook"
-output: html_notebook
----
-
-```{r}
 # 2018
 ### preliminary business:
 
@@ -284,6 +278,5 @@ prop18_adds %>%
    group_by(Land_Parcel_ID) %>%
    summarise(n_distinct(GIS_ID)) %>%
    View()
-```
 
 
