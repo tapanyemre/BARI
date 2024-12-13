@@ -1,7 +1,7 @@
 # BARI
 Scripts for projects
 
-(Big Picture)[https://github.com/tapanyemre/BARI/blob/main/big%20picture.pdf]
+![Big Picture](https://github.com/tapanyemre/BARI/blob/main/big%20picture.pdf)
 
 # Geographical Infrastructure Data Pipeline
 
