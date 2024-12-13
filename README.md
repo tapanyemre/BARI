@@ -53,24 +53,23 @@ The pipeline produces outputs in both `.csv` and `.shp` (GIS shapefile) formats.
 ### Pipeline Scripts
 The pipeline consists of multiple scripts that process and transform the data into the final outputs:
 
-1. **A. [PropertiesToParcel](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_A_PropertiesToParcel.Rmd)**  
+1. **[A.PropertiesToParcel](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_A_PropertiesToParcel.Rmd)**  
   This script processes parcels from the current year's property assessment dataset and creates an output that is used in the merge step.
 
-2. **B. [PropToTiger](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_B_PropToTiger.R)**  
+2. **[B.PropToTiger](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_B_PropToTiger.R)**  
   This script assigns street information from TIGER Line data to parcels. During this step, the property assessment data and TIGER Line data are updated using the latest road information. The output is prepared for the merge step.
 
-3. **C. [MergeAndOutput](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_C_MergeAndOutput.R)**  
+3. **[C.MergeAndOutput](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_C_MergeAndOutput.R)**  
   This script merges the outputs from Scripts A and B with property and parcel records to generate the final BARI Parcels dataset and properties with geographic information.
 
-4. **D1. [ParcelToStreets](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_D1_ParcelToStreets.R)**  
+4. **[D1.ParcelToStreets](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_D1_ParcelToStreets.R)**  
   This script maps parcel data to street-level information, enabling the analysis of parcel-related attributes at the street level.
 
-5. **D2. [StreetKMeans](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_D2_StreetKMeans.R)**  
+5. **[D2.StreetKMeans](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_D2_StreetKMeans.R)**  
   This script applies K-means clustering to land use data from parcels and uses the output of Script D1 to analyze patterns at the street level.
 
-6. **E. [SanityChecks](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_E_SanityChecks.Rmd)**  
+6. **[E.SanityChecks](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_E_SanityChecks.Rmd)**  
   This script performs validation checks on the final outputs to ensure they are consistent and comparable with previous years.
-
 
 ## Property Assesments Data Pipeline
 
@@ -78,11 +77,9 @@ The pipeline consists of multiple scripts that process and transform the data in
 
 The Property Assesments Data Pipeline processes raw data to produce cleaned datasets, aggregated metrics, and longitudinal files for spatial and temporal analysis. This pipeline integrates 2020 Census geographies while maintaining compatibility with older data to support comprehensive research on property and neighborhood-level dynamics. It is designed to handle raw data inconsistencies, impute missing values, and track property trends over time.
 
-
 ### Outputs
 
 The outputs of the pipeline include cleaned and standardized property data, aggregated metrics for Census tracts and block groups, and longitudinal files that capture changes in property values over time. These outputs enable detailed spatial and temporal analysis of property dynamics and trends.
-
 
 ### Workflow
 
@@ -115,10 +112,10 @@ The pipeline produces outputs that facilitate the longitudinal analysis of Permi
 ### Workflow
 
 1. **[Records Script](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Records.R)**
-This component prepares raw permits data for analysis by performing data cleaning, geocoding, and integration with property and land parcel information. Duplicate records are removed, missing geographic information is geocoded, and the data is enriched with identifiers for spatial analysis. The processed permits data is saved as a CSV file named `Permits.Records.Geocoded.(MM-YYYY).csv`.
+    This component prepares raw permits data for analysis by performing data cleaning, geocoding, and integration with property and land parcel information. Duplicate records are removed, missing geographic              information is geocoded, and the data is enriched with identifiers for spatial analysis. The processed permits data is saved as a CSV file named `Permits.Records.Geocoded.(MM-YYYY).csv`.
 
 2. **[Ecometrics Script](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Ecometrics.R)**
-Building on the processed permits data, the Ecometrics Pipeline calculates metrics at multiple geographic levels for annual and longitudinal analysis. Outputs include aggregated metrics for land parcels, block groups, and census tracts, provided in both tabular (CSV) and geospatial (shapefile/GPKG) formats. These metrics include permit counts by type, adjusted valuations, and normalized values per parcel.
+    Building on the processed permits data, the Ecometrics Pipeline calculates metrics at multiple geographic levels for annual and longitudinal analysis. Outputs include aggregated metrics for land parcels, block       groups, and census tracts, provided in both tabular (CSV) and geospatial (shapefile/GPKG) formats. These metrics include permit counts by type, adjusted valuations, and normalized values per parcel.
 
 ### Suggestions
 1. Place input files (e.g., permits, land parcels, property data) in the `Inputs` directory.
@@ -148,7 +145,6 @@ The pipeline is executed in sequential order through the following scripts:
 
 2. **[911_B_CreateEcometrics](https://github.com/tapanyemre/BARI/blob/main/911/Codes_Final/911_B_Create%20Ecometrics.R)**  
   This script generates longitudinal ecometrics files based on the processed 911 call data. These files contain metrics for analyzing 911 call trends over time and across geographic areas.
-
 
 ## Author
 This guide is prepared by Yunus Emre Tapan in December 2024.
