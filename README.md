@@ -50,7 +50,7 @@ The pipeline produces outputs in both `.csv` and `.shp` (GIS shapefile) formats.
 3. **Street Segments**  
    The Street Segments dataset provides a complete list of all street segments in Boston, Massachusetts, as defined by the Census TIGER Line data from 2013. This dataset allows for the integration of street-level data with other geographic layers.
 
-### Pipeline Scripts
+### Workflow
 The pipeline consists of multiple scripts that process and transform the data into the final outputs:
 
 1. **[A.PropertiesToParcel](https://github.com/tapanyemre/BARI/blob/main/Geographical%20Infrastructure/Codes_Final/GI_A_PropertiesToParcel.Rmd)**  
@@ -112,9 +112,11 @@ The pipeline produces outputs that facilitate the longitudinal analysis of Permi
 ### Workflow
 
 1. **[Records Script](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Records.R)**
+
     This component prepares raw permits data for analysis by performing data cleaning, geocoding, and integration with property and land parcel information. Duplicate records are removed, missing geographic              information is geocoded, and the data is enriched with identifiers for spatial analysis. The processed permits data is saved as a CSV file named `Permits.Records.Geocoded.(MM-YYYY).csv`.
 
 2. **[Ecometrics Script](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Ecometrics.R)**
+   
     Building on the processed permits data, the Ecometrics Pipeline calculates metrics at multiple geographic levels for annual and longitudinal analysis. Outputs include aggregated metrics for land parcels, block       groups, and census tracts, provided in both tabular (CSV) and geospatial (shapefile/GPKG) formats. These metrics include permit counts by type, adjusted valuations, and normalized values per parcel.
 
 ### Suggestions
@@ -131,10 +133,12 @@ The 911 Data Pipeline is designed to process 911 call data and generate longitud
 ### Outputs
 The pipeline produces outputs that facilitate the longitudinal analysis of 911 call data. These outputs include cleaned and processed datasets, as well as ecometrics files, which are structured to analyze trends over time.
 
-1. **Processed 911 Call Data**  
+1. **Processed 911 Call Data**
+   
    This dataset includes cleaned and formatted 911 call records with updated call types. The data is prepared to ensure consistency and accuracy across all records.
 
-2. **Ecometrics Files**  
+2. **Ecometrics Files**
+   
    The ecometrics files are derived from the processed 911 call data and are designed for longitudinal analysis. These files provide metrics to evaluate trends and patterns in 911 call data over time.
 
 ### Workflow
