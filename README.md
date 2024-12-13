@@ -5,14 +5,14 @@
 BARI projects are deeply interconnected, relying on three main types of datasets:
 
 1. **Static Datasets**: Updated infrequently, these datasets provide foundational context for long-term analyses.
-2. **New Releases**: Generated through interdependent workflows, these datasets are published as standalone releases each year.
+2. **Standalone Releases**: Generated through interdependent workflows, these datasets are published as standalone releases each year.
 3. **Continuous Releases**: Updated annually, these datasets are merged into a unified dataset for consistency rather than creating separate releases.
 
 ### Static Datasets
 
 - **Mass Census Indicators (MCI)** and **Census Geographies (CG)**: Updated every five to ten years, these datasets offer a long-term reference for analyses. They are publicly accessible through the **Harvard Dataverse**.
 
-### New Releases
+### Standalone Releases
 
 - **Geographical Infrastructure (GI)** and **Property Assessment (PA)**: These datasets are created through a closely linked workflow:
   - **GI** provides foundational data such as **Land Parcels**, **Properties**, and **Roads**, which support all other projects.
