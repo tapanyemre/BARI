@@ -111,11 +111,11 @@ The pipeline produces outputs that facilitate the longitudinal analysis of Permi
 
 ### Workflow
 
-1. **[Records Script](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Records.R)**
+1. **[Permits.Syntax.Records.R](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Records.R)**
 
     This component prepares raw permits data for analysis by performing data cleaning, geocoding, and integration with property and land parcel information. Duplicate records are removed, missing geographic              information is geocoded, and the data is enriched with identifiers for spatial analysis. The processed permits data is saved as a CSV file named `Permits.Records.Geocoded.(MM-YYYY).csv`.
 
-2. **[Ecometrics Script](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Ecometrics.R)**
+2. **[Permits.Syntax.Ecometrics.R](https://github.com/tapanyemre/BARI/blob/main/Permits/Codes_Final/Permits.Syntax.Ecometrics.R)**
    
     Building on the processed permits data, the Ecometrics Pipeline calculates metrics at multiple geographic levels for annual and longitudinal analysis. Outputs include aggregated metrics for land parcels, block       groups, and census tracts, provided in both tabular (CSV) and geospatial (shapefile/GPKG) formats. These metrics include permit counts by type, adjusted valuations, and normalized values per parcel.
 
