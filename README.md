@@ -1,5 +1,17 @@
-# BARI
-Scripts for projects
+# BARI Data Portal Workflow
+
+## Introduction
+
+BARI projects are deeply interconnected, with the **Geographical Infrastructure** (GI) serving as the backbone for all other projects. Datasets such as **Land Parcels**, **Properties**, and **Roads** are integral components that feed into various workflows.
+
+At first glance, the interdependencies between scripts may seem complex. However, a clear execution order ensures smooth operation. Specifically:
+
+1. **Property Assessment (PA)** and **Geographical Infrastructure (GI)** scripts should be run simultaneously.
+2. The output of the first PA script serves as the input for the second GI script.
+3. Similarly, the final outputs of GI scripts are required as inputs for the second PA script.
+
+Details about each script and their dependencies are thoroughly documented within the scripts themselves as annotations. Refer to the diagram below for a high-level overview of how these scripts communicate and work harmoniously to deliver results.
+
 
 ![Big Picture](https://github.com/tapanyemre/BARI/blob/main/bigpicture.png)
 
